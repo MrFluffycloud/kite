@@ -18,14 +18,17 @@ class AddTransactionUseCase(
     private val accountRepository: AccountRepository,
     private val exchangeRateRepository: ExchangeRateRepository
 ) {
-    suspend operator fun invoke(transaction: Transaction): Result<Long> {
+    suspend operator fun invoke(
+        transaction: Transaction,
+        destinationAccountId: Long? = null
+    ): Result<Long> {
         return try {
             // Validate amount
             require(transaction.originalAmount > BigDecimal.ZERO) {
                 "Amount must be greater than zero"
             }
 
-            // Validate account exists
+            // Validate source account exists
             val account = accountRepository.getAccountById(transaction.accountId)
                 ?: return Result.failure(IllegalArgumentException("Account not found"))
 
@@ -48,8 +51,48 @@ class AddTransactionUseCase(
                 }
             }
 
+            var finalMerchant = transaction.merchant
+            var finalNote = transaction.note
+
+            // If it's a transfer and destination account is provided
+            if (transaction.type == TransactionType.TRANSFER && destinationAccountId != null) {
+                require(transaction.accountId != destinationAccountId) {
+                    "Source and destination accounts must be different"
+                }
+                val destAccount = accountRepository.getAccountById(destinationAccountId)
+                    ?: return Result.failure(IllegalArgumentException("Destination account not found"))
+
+                // Credit destination account
+                val creditAmount = if (transaction.originalCurrency == destAccount.defaultCurrency) {
+                    transaction.originalAmount
+                } else {
+                    val destRate = exchangeRateRepository.getLatestRate(
+                        transaction.originalCurrency,
+                        destAccount.defaultCurrency
+                    )
+                    if (destRate != null) {
+                        transaction.originalAmount.multiply(destRate.rate)
+                    } else {
+                        baseAmount // fallback
+                    }
+                }
+                val newDestBalance = destAccount.currentBalance.add(creditAmount)
+                accountRepository.updateBalance(destAccount.id, newDestBalance)
+
+                if (finalMerchant.isNullOrBlank()) {
+                    finalMerchant = "Transfer to ${destAccount.name}"
+                }
+                if (finalNote.isNullOrBlank()) {
+                    finalNote = "Transferred to ${destAccount.name}"
+                }
+            }
+
             // Update the final transaction with computed base amount
-            val finalTransaction = transaction.copy(baseAmount = baseAmount)
+            val finalTransaction = transaction.copy(
+                baseAmount = baseAmount,
+                merchant = finalMerchant,
+                note = finalNote
+            )
 
             // Adjust account balance based on transaction type
             val balanceChange = when (finalTransaction.type) {

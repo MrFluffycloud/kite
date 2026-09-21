@@ -122,6 +122,16 @@ enum class Web3Chain(
             "https://api.avax.network/ext/bc/C/rpc",
             "https://avalanche-c-chain-rpc.publicnode.com"
         )
+    ),
+    SOLANA(
+        chainId = 501,
+        chainName = "Solana",
+        nativeSymbol = "SOL",
+        rpcUrls = listOf(
+            "https://api.mainnet-beta.solana.com",
+            "https://solana-rpc.publicnode.com"
+        ),
+        isEvm = false
     );
 
     companion object {
@@ -148,6 +158,7 @@ data class BinanceSyncState(
     val web3Address: String? = null,
     val web3Chains: Set<String> = setOf(
         "BITCOIN",
+        "SOLANA",
         "BSC",
         "ETHEREUM",
         "ARBITRUM",
@@ -166,6 +177,12 @@ data class BinanceSyncState(
 )
 
 object Web3AddressUtils {
+    data class Web3Addresses(
+        val evm: String? = null,
+        val btc: String? = null,
+        val sol: String? = null
+    )
+
     fun isBitcoinAddress(addr: String): Boolean {
         val clean = addr.trim()
         if (clean.length !in 26..62) return false
@@ -185,30 +202,39 @@ object Web3AddressUtils {
         }
     }
 
-    fun parseAddresses(raw: String?): Pair<String?, String?> {
-        if (raw.isNullOrBlank()) return Pair(null, null)
+    fun isSolanaAddress(addr: String): Boolean {
+        val clean = addr.trim()
+        if (clean.length !in 32..44) return false
+        if (clean.startsWith("0x", ignoreCase = true) || clean.startsWith("bc1", ignoreCase = true)) return false
+        if (isBitcoinAddress(clean)) return false
+        return clean.all {
+            it in '1'..'9' || it in 'A'..'H' || it in 'J'..'N' || it in 'P'..'Z' || it in 'a'..'k' || it in 'm'..'z'
+        }
+    }
+
+    fun parseAddresses(raw: String?): Web3Addresses {
+        if (raw.isNullOrBlank()) return Web3Addresses()
         val tokens = raw.split(";", ",", " ", "\n").map { it.trim() }.filter { it.isNotEmpty() }
         var evm: String? = null
         var btc: String? = null
+        var sol: String? = null
         for (t in tokens) {
-            if (isEvmAddress(t)) {
-                evm = t
-            } else if (isBitcoinAddress(t)) {
-                btc = t
+            when {
+                isEvmAddress(t) -> evm = t
+                isBitcoinAddress(t) -> btc = t
+                isSolanaAddress(t) -> sol = t
             }
         }
-        return Pair(evm, btc)
+        return Web3Addresses(evm = evm, btc = btc, sol = sol)
     }
 
-    fun combineAddresses(evm: String?, btc: String?): String {
-        val e = evm?.trim()?.takeIf { it.isNotEmpty() }
-        val b = btc?.trim()?.takeIf { it.isNotEmpty() }
-        return when {
-            e != null && b != null -> "$e;$b"
-            e != null -> e
-            b != null -> b
-            else -> ""
-        }
+    fun combineAddresses(evm: String?, btc: String?, sol: String? = null): String {
+        val list = listOfNotNull(
+            evm?.trim()?.takeIf { it.isNotEmpty() },
+            btc?.trim()?.takeIf { it.isNotEmpty() },
+            sol?.trim()?.takeIf { it.isNotEmpty() }
+        )
+        return list.joinToString(";")
     }
 }
 

@@ -90,6 +90,26 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE) }
+    val packageInfo = remember(context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+    val currentAppVersion = packageInfo?.versionName ?: "0.3.3"
+    val currentBuildCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        packageInfo?.longVersionCode ?: 8L
+    } else {
+        @Suppress("DEPRECATION")
+        packageInfo?.versionCode?.toLong() ?: 8L
+    }
+    val appDisplayVersion = "Kite v$currentAppVersion (Build $currentBuildCode)"
 
     var isNotificationAccessGranted by remember {
         mutableStateOf(
@@ -603,8 +623,8 @@ fun SettingsScreen(
                 SettingsItemRow(
                     icon = Icons.Default.SystemUpdate,
                     title = "Check for updates",
-                    subtitle = if (uiState.isCheckingForUpdates) "Checking GitHub releases..." else "Kite v0.2.0 • Tap to check for latest release",
-                    onClick = { viewModel.checkForUpdates("0.2.0") }
+                    subtitle = if (uiState.isCheckingForUpdates) "Checking GitHub releases..." else "Kite v$currentAppVersion • Tap to check for latest release",
+                    onClick = { viewModel.checkForUpdates(currentAppVersion) }
                 )
             }
 
@@ -656,7 +676,7 @@ fun SettingsScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 StealthTriggerVersionRow(
-                    version = "Kite v0.2.0 (Build 2)",
+                    version = appDisplayVersion,
                     onTrigger = onVaultTrigger
                 )
             }
@@ -1068,7 +1088,7 @@ fun SettingsScreen(
                         }
                     } else {
                         Text(
-                            text = "You are currently running the latest version of Kite (${update?.currentVersion ?: "0.3.0"}).",
+                            text = "You are currently running the latest version of Kite (${update?.currentVersion ?: currentAppVersion}).",
                             style = MaterialTheme.typography.bodyMedium,
                             color = InkSecondary
                         )

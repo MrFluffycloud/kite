@@ -38,7 +38,8 @@ data class AddTransactionUiState(
     val errorMessage: String? = null,
     val savedSuccessfully: Boolean = false,
     val selectedCurrency: String = "",
-    val exchangeRateInput: String = ""
+    val exchangeRateInput: String = "",
+    val destinationAccountId: Long? = null
 )
 
 class AddTransactionViewModel(
@@ -85,6 +86,8 @@ class AddTransactionViewModel(
                         parent?.subcategories?.firstOrNull()?.id ?: initialParent
                     }
 
+                    val initialDestId = state.destinationAccountId ?: accounts.find { it.id != selectedAccountId }?.id
+
                     state.copy(
                         accounts = accounts,
                         categories = sortedCategories,
@@ -92,7 +95,8 @@ class AddTransactionViewModel(
                         selectedParentCategoryId = initialParent,
                         selectedCategoryId = initialChild,
                         selectedCurrency = state.selectedCurrency.ifEmpty { selectedAccount?.defaultCurrency ?: "" },
-                        exchangeRateInput = if (state.exchangeRateInput.isEmpty()) "1.0" else state.exchangeRateInput
+                        exchangeRateInput = if (state.exchangeRateInput.isEmpty()) "1.0" else state.exchangeRateInput,
+                        destinationAccountId = initialDestId
                     )
                 }
             }
@@ -247,6 +251,10 @@ class AddTransactionViewModel(
         }
     }
 
+    fun onDestinationAccountChange(accountId: Long) {
+        _uiState.update { it.copy(destinationAccountId = accountId) }
+    }
+
     fun onToggleMore() {
         _uiState.update { it.copy(isMoreExpanded = !it.isMoreExpanded) }
     }
@@ -257,16 +265,39 @@ class AddTransactionViewModel(
 
     fun saveTransaction() {
         val currentState = _uiState.value
-        val amount = currentState.amountString.toBigDecimalOrNull() ?: return
-        val categoryId = currentState.selectedCategoryId ?: return
+        val amount = currentState.amountString.toBigDecimalOrNull()
+        if (amount == null || amount <= java.math.BigDecimal.ZERO) {
+            _uiState.update { it.copy(errorMessage = "Please enter a valid amount") }
+            return
+        }
+
         val accountId = currentState.selectedAccountId ?: return
         val account = currentState.accounts.find { it.id == accountId } ?: return
+
+        val isTransfer = currentState.transactionType == TransactionType.TRANSFER
+        val categoryId = if (isTransfer) null else (currentState.selectedCategoryId ?: return)
+
+        if (isTransfer) {
+            if (currentState.destinationAccountId == null) {
+                _uiState.update { it.copy(errorMessage = "Please select a destination account") }
+                return
+            }
+            if (currentState.destinationAccountId == accountId) {
+                _uiState.update { it.copy(errorMessage = "Destination account must be different from source account") }
+                return
+            }
+        }
+
         val exchangeRate = currentState.exchangeRateInput.toBigDecimalOrNull() ?: java.math.BigDecimal.ONE
         val baseAmount = amount * exchangeRate
 
         _uiState.update { it.copy(isSaving = true) }
 
         viewModelScope.launch {
+            val destAccount = if (isTransfer) currentState.accounts.find { it.id == currentState.destinationAccountId } else null
+            val defaultNote = if (isTransfer && destAccount != null) "Transfer to ${destAccount.name}" else null
+            val defaultMerchant = if (isTransfer && destAccount != null) "Transfer to ${destAccount.name}" else null
+
             val transaction = Transaction(
                 accountId = accountId,
                 categoryId = categoryId,
@@ -274,14 +305,15 @@ class AddTransactionViewModel(
                 originalAmount = amount,
                 originalCurrency = currentState.selectedCurrency.ifEmpty { account.defaultCurrency },
                 baseAmount = baseAmount,
-                note = currentState.note.ifBlank { null },
+                note = currentState.note.ifBlank { defaultNote },
+                merchant = defaultMerchant,
                 transactionDate = currentState.transactionDate,
                 createdAt = Clock.System.now(),
                 updatedAt = Clock.System.now(),
                 source = TransactionSource.MANUAL
             )
 
-            val result = addTransactionUseCase(transaction)
+            val result = addTransactionUseCase(transaction, if (isTransfer) currentState.destinationAccountId else null)
             if (result.isSuccess) {
                 _uiState.update { it.copy(isSaving = false, savedSuccessfully = true) }
             } else {

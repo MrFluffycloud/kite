@@ -101,29 +101,41 @@ class Web3RpcService(
 
         fun isBitcoinAddress(addr: String): Boolean = com.expensevault.core.model.Web3AddressUtils.isBitcoinAddress(addr)
 
-        fun parseAddresses(raw: String?): Pair<String?, String?> = com.expensevault.core.model.Web3AddressUtils.parseAddresses(raw)
+        fun isSolanaAddress(addr: String): Boolean = com.expensevault.core.model.Web3AddressUtils.isSolanaAddress(addr)
+
+        fun parseAddresses(raw: String?) = com.expensevault.core.model.Web3AddressUtils.parseAddresses(raw)
     }
 
     /**
      * Fetch all balances across specified chains.
-     * Supports EVM addresses (0x...) and native Bitcoin addresses (bc1..., 1..., 3...).
+     * Supports EVM addresses (0x...), native Bitcoin addresses (bc1..., 1..., 3...), and Solana addresses.
      */
     suspend fun getWalletBalances(
         address: String,
         chains: Set<Web3Chain>
     ): List<OnChainBalance> = coroutineScope {
-        val (evmAddress, btcAddress) = parseAddresses(address)
+        val addrs = parseAddresses(address)
 
         val results = mutableListOf<OnChainBalance>()
 
         // 1. Fetch native Bitcoin if Bitcoin chain enabled and a BTC address is present
+        val btcAddress = addrs.btc
         val btcJob = if (btcAddress != null && chains.contains(Web3Chain.BITCOIN)) {
             async(Dispatchers.IO) {
                 fetchBitcoinBalance(btcAddress)
             }
         } else null
 
-        // 2. Fetch EVM chains if an EVM address is present
+        // 2. Fetch Solana if Solana chain enabled and a SOL address is present
+        val solAddress = addrs.sol
+        val solJob = if (solAddress != null && chains.contains(Web3Chain.SOLANA)) {
+            async(Dispatchers.IO) {
+                fetchSolanaBalances(solAddress)
+            }
+        } else null
+
+        // 3. Fetch EVM chains if an EVM address is present
+        val evmAddress = addrs.evm
         val evmJobs = if (evmAddress != null) {
             val evmChains = chains.filter { it.isEvm }
             evmChains.map { chain ->
@@ -134,6 +146,7 @@ class Web3RpcService(
         } else emptyList()
 
         btcJob?.await()?.let { results.add(it) }
+        solJob?.await()?.let { results.addAll(it) }
         evmJobs.awaitAll().flatten().forEach { results.add(it) }
 
         results.filter { it.balance > BigDecimal.ZERO }
@@ -175,6 +188,96 @@ class Web3RpcService(
         } catch (_: Exception) {}
 
         null
+    }
+
+    private suspend fun fetchSolanaBalances(solAddress: String): List<OnChainBalance> = withContext(Dispatchers.IO) {
+        val cleanAddr = solAddress.trim()
+        if (!isSolanaAddress(cleanAddr)) return@withContext emptyList()
+        val results = mutableListOf<OnChainBalance>()
+
+        // 1. Native SOL Balance via getBalance
+        val balanceReq = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("method", "getBalance")
+            put("params", JsonArray(listOf(JsonPrimitive(cleanAddr))))
+            put("id", 1)
+        }.toString()
+
+        for (url in Web3Chain.SOLANA.rpcUrls) {
+            try {
+                val responseText = httpClient.post(url) {
+                    contentType(ContentType.Application.Json)
+                    setBody(balanceReq)
+                }.bodyAsText()
+                val root = json.parseToJsonElement(responseText) as? kotlinx.serialization.json.JsonObject
+                val resultObj = root?.get("result") as? kotlinx.serialization.json.JsonObject
+                val lamports = resultObj?.get("value")?.let { it as? JsonPrimitive }?.content?.toLongOrNull()
+                if (lamports != null && lamports > 0L) {
+                    val solBalance = BigDecimal(lamports).divide(BigDecimal(1_000_000_000), 9, RoundingMode.HALF_UP)
+                    results.add(OnChainBalance(Web3Chain.SOLANA, "SOL", solBalance))
+                    break
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. SPL Tokens via getTokenAccountsByOwner
+        val tokensReq = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("method", "getTokenAccountsByOwner")
+            put("params", JsonArray(listOf(
+                JsonPrimitive(cleanAddr),
+                buildJsonObject {
+                    put("programId", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+                },
+                buildJsonObject {
+                    put("encoding", "jsonParsed")
+                }
+            )))
+            put("id", 2)
+        }.toString()
+
+        for (url in Web3Chain.SOLANA.rpcUrls) {
+            try {
+                val responseText = httpClient.post(url) {
+                    contentType(ContentType.Application.Json)
+                    setBody(tokensReq)
+                }.bodyAsText()
+                val root = json.parseToJsonElement(responseText) as? kotlinx.serialization.json.JsonObject
+                val resultObj = root?.get("result") as? kotlinx.serialization.json.JsonObject
+                val accountsArray = resultObj?.get("value") as? JsonArray ?: continue
+
+                for (acc in accountsArray) {
+                    try {
+                        val accObj = acc as? kotlinx.serialization.json.JsonObject ?: continue
+                        val dataObj = accObj["account"]?.let { it as? kotlinx.serialization.json.JsonObject }?.get("data") as? kotlinx.serialization.json.JsonObject
+                        val parsedObj = dataObj?.get("parsed") as? kotlinx.serialization.json.JsonObject
+                        val infoObj = parsedObj?.get("info") as? kotlinx.serialization.json.JsonObject
+                        val mint = infoObj?.get("mint")?.let { (it as? JsonPrimitive)?.content }
+                        val tokenAmount = infoObj?.get("tokenAmount") as? kotlinx.serialization.json.JsonObject
+                        val rawAmount = tokenAmount?.get("amount")?.let { (it as? JsonPrimitive)?.content }
+                        val decimals = tokenAmount?.get("decimals")?.let { (it as? JsonPrimitive)?.content?.toIntOrNull() } ?: 6
+
+                        if (mint != null && rawAmount != null) {
+                            val rawBigInt = BigInteger(rawAmount)
+                            if (rawBigInt > BigInteger.ZERO) {
+                                val tokenBalance = BigDecimal(rawBigInt).divide(BigDecimal.TEN.pow(decimals), decimals, RoundingMode.HALF_UP)
+                                val symbol = when (mint) {
+                                    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" -> "USDC"
+                                    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" -> "USDT"
+                                    else -> null
+                                }
+                                if (symbol != null) {
+                                    results.add(OnChainBalance(Web3Chain.SOLANA, symbol, tokenBalance, mint))
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+                break
+            } catch (_: Exception) {}
+        }
+
+        results
     }
 
     private suspend fun fetchBalancesForChain(

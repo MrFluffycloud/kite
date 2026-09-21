@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -495,6 +496,7 @@ fun TransactionItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Leading category icon box
+        val isTransfer = item.transaction.type == TransactionType.TRANSFER
         Box(
             modifier = Modifier
                 .size(38.dp)
@@ -502,7 +504,7 @@ fun TransactionItem(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = getCategoryOutlineIcon(item.category?.name, item.category?.iconName),
+                imageVector = if (isTransfer) Icons.Default.SwapHoriz else getCategoryOutlineIcon(item.category?.name, item.category?.iconName),
                 contentDescription = null,
                 tint = InkPrimary,
                 modifier = Modifier.size(18.dp)
@@ -517,7 +519,7 @@ fun TransactionItem(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = item.transaction.merchant ?: item.transaction.note ?: "Expense",
+                text = item.transaction.merchant ?: item.transaction.note ?: (if (isTransfer) "Transfer" else "Expense"),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 color = InkPrimary,
@@ -532,7 +534,7 @@ fun TransactionItem(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = item.category?.name ?: "General",
+                    text = if (isTransfer) (item.account?.name ?: "Transfer") else (item.category?.name ?: "General"),
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary,
                     maxLines = 1
@@ -582,8 +584,16 @@ fun TransactionItem(
         // Trailing amount
         val amountStr = formatter.format(item.transaction.baseAmount)
         Text(
-            text = if (item.transaction.type == TransactionType.EXPENSE) "-$amountStr" else "+$amountStr",
-            color = if (item.transaction.type == TransactionType.EXPENSE) MutedClay else MutedSage,
+            text = when (item.transaction.type) {
+                TransactionType.EXPENSE -> "-$amountStr"
+                TransactionType.INCOME -> "+$amountStr"
+                TransactionType.TRANSFER -> amountStr
+            },
+            color = when (item.transaction.type) {
+                TransactionType.EXPENSE -> MutedClay
+                TransactionType.INCOME -> MutedSage
+                TransactionType.TRANSFER -> InkPrimary
+            },
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1

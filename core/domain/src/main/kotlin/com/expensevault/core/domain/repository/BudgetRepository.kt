@@ -9,4 +9,7 @@ interface BudgetRepository {
     suspend fun addBudgetCap(budgetCap: BudgetCap): Long
     suspend fun updateBudgetCap(budgetCap: BudgetCap)
     suspend fun deleteBudgetCap(budgetCap: BudgetCap)
+
+    fun getWeeklyAllowanceConfig(): Flow<com.expensevault.core.model.WeeklyAllowanceConfig>
+    suspend fun saveWeeklyAllowanceConfig(config: com.expensevault.core.model.WeeklyAllowanceConfig)
 }

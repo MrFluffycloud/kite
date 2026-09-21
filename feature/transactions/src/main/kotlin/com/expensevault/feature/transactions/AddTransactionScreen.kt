@@ -27,6 +27,9 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.expensevault.core.model.Account
 import com.expensevault.core.model.CategoryWithSubcategories
 import com.expensevault.core.model.TransactionType
 import org.koin.androidx.compose.koinViewModel
@@ -51,6 +55,8 @@ private val InkSecondary = Color(0xFF6B6B68)
 private val InkTertiary = Color(0xFFB8B8B5)
 private val HeroBlack = Color(0xFF0F0F0F)
 private val Hairline = Color(0xFFE7E6E3)
+private val MutedClay = Color(0xFFB5533C)
+private val MutedSage = Color(0xFF5C6E5A)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,17 +139,22 @@ fun AddTransactionScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceEvenly
             ) {
-                // Type Segmented Switcher (Expense / Income)
-                val isExpense = uiState.transactionType == TransactionType.EXPENSE
+                // Type Segmented Switcher (Expense / Income / Transfer)
+                val activeType = uiState.transactionType
                 Surface(
                     shape = RoundedCornerShape(50),
                     color = NeutralMuted,
                     modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
                 ) {
                     Box(modifier = Modifier.padding(3.dp)) {
-                        val tabWidth = 92.dp
+                        val tabWidth = 84.dp
+                        val targetIndex = when (activeType) {
+                            TransactionType.EXPENSE -> 0
+                            TransactionType.INCOME -> 1
+                            TransactionType.TRANSFER -> 2
+                        }
                         val indicatorOffset by animateDpAsState(
-                            targetValue = if (isExpense) 0.dp else tabWidth + 4.dp,
+                            targetValue = (tabWidth + 4.dp) * targetIndex,
                             animationSpec = if (reduceMotion) snap() else spring(dampingRatio = 0.82f, stiffness = 380f),
                             label = "TypeSwitchOffset"
                         )
@@ -158,36 +169,27 @@ fun AddTransactionScreen(
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(tabWidth)
-                                    .height(36.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .clickable { viewModel.onTypeChange(TransactionType.EXPENSE) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Expense",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isExpense) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isExpense) NeutralBg else InkSecondary
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .width(tabWidth)
-                                    .height(36.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .clickable { viewModel.onTypeChange(TransactionType.INCOME) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Income",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (!isExpense) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (!isExpense) NeutralBg else InkSecondary
-                                )
+                            listOf(
+                                TransactionType.EXPENSE to "Expense",
+                                TransactionType.INCOME to "Income",
+                                TransactionType.TRANSFER to "Transfer"
+                            ).forEach { (type, label) ->
+                                val isSelected = activeType == type
+                                Box(
+                                    modifier = Modifier
+                                        .width(tabWidth)
+                                        .height(36.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .clickable { viewModel.onTypeChange(type) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) NeutralBg else InkSecondary
+                                    )
+                                }
                             }
                         }
                     }
@@ -236,13 +238,23 @@ fun AddTransactionScreen(
                     }
                 }
 
-                // Horizontal Pill Category Selector
-                CategorySelection(
-                    categories = uiState.categories,
-                    selectedCategoryId = uiState.selectedCategoryId,
-                    selectedParentCategoryId = uiState.selectedParentCategoryId,
-                    onCategorySelect = viewModel::onCategorySelect
-                )
+                if (uiState.transactionType == TransactionType.TRANSFER) {
+                    TransferAccountSelector(
+                        accounts = uiState.accounts,
+                        fromAccountId = uiState.selectedAccountId,
+                        toAccountId = uiState.destinationAccountId,
+                        onFromAccountSelect = viewModel::onAccountSelect,
+                        onToAccountSelect = viewModel::onDestinationAccountChange
+                    )
+                } else {
+                    // Horizontal Pill Category Selector
+                    CategorySelection(
+                        categories = uiState.categories,
+                        selectedCategoryId = uiState.selectedCategoryId,
+                        selectedParentCategoryId = uiState.selectedParentCategoryId,
+                        onCategorySelect = viewModel::onCategorySelect
+                    )
+                }
 
                 // Quick Select Amount Chips (Horizontal row)
                 val quickAmounts = listOf(100, 200, 500, 1000, 2000, 5000)
@@ -289,7 +301,10 @@ fun AddTransactionScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Primary Action Button (Filled Near-Black #111111 with Pure White Text)
-                val isSaveEnabled = uiState.amountString.isNotEmpty() && uiState.selectedCategoryId != null && !uiState.isSaving
+                val isTransfer = uiState.transactionType == TransactionType.TRANSFER
+                val isSaveEnabled = uiState.amountString.isNotEmpty() && 
+                    (if (isTransfer) (uiState.destinationAccountId != null && uiState.destinationAccountId != uiState.selectedAccountId) else uiState.selectedCategoryId != null) && 
+                    !uiState.isSaving
                 Button(
                     onClick = viewModel::saveTransaction,
                     enabled = isSaveEnabled || uiState.savedSuccessfully,
@@ -333,7 +348,7 @@ fun AddTransactionScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Saved",
+                                        text = if (isTransfer) "Transferred" else "Saved",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFFFAFAF9)
@@ -349,7 +364,7 @@ fun AddTransactionScreen(
                             }
                             else -> {
                                 Text(
-                                    text = "Save transaction",
+                                    text = if (isTransfer) "Transfer funds" else "Save transaction",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (isSaveEnabled) Color(0xFFFAFAF9) else Color(0xFFFAFAF9).copy(alpha = 0.45f)
@@ -651,6 +666,133 @@ fun NumberPad(
                                 color = InkPrimary
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransferAccountSelector(
+    accounts: List<Account>,
+    fromAccountId: Long?,
+    toAccountId: Long?,
+    onFromAccountSelect: (Long) -> Unit,
+    onToAccountSelect: (Long) -> Unit
+) {
+    var isFromExpanded by remember { mutableStateOf(false) }
+    var isToExpanded by remember { mutableStateOf(false) }
+    val fromAccount = accounts.find { it.id == fromAccountId }
+    val toAccount = accounts.find { it.id == toAccountId }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = NeutralCard),
+        border = BorderStroke(1.dp, Hairline),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // From Account Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { isFromExpanded = true }
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(NeutralMuted, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowUpward,
+                        contentDescription = null,
+                        tint = MutedClay,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("From Account", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
+                    Text(
+                        text = fromAccount?.name ?: "Select Source Account",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = InkPrimary
+                    )
+                }
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = InkSecondary)
+
+                DropdownMenu(
+                    expanded = isFromExpanded,
+                    onDismissRequest = { isFromExpanded = false }
+                ) {
+                    accounts.forEach { acc ->
+                        DropdownMenuItem(
+                            text = { Text(acc.name) },
+                            onClick = {
+                                onFromAccountSelect(acc.id)
+                                isFromExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Hairline, modifier = Modifier.padding(vertical = 4.dp))
+
+            // To Account Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { isToExpanded = true }
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(NeutralMuted, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDownward,
+                        contentDescription = null,
+                        tint = MutedSage,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("To Account", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
+                    Text(
+                        text = toAccount?.name ?: "Select Destination Account",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = InkPrimary
+                    )
+                }
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = InkSecondary)
+
+                DropdownMenu(
+                    expanded = isToExpanded,
+                    onDismissRequest = { isToExpanded = false }
+                ) {
+                    accounts.filter { it.id != fromAccountId }.forEach { acc ->
+                        DropdownMenuItem(
+                            text = { Text(acc.name) },
+                            onClick = {
+                                onToAccountSelect(acc.id)
+                                isToExpanded = false
+                            }
+                        )
                     }
                 }
             }

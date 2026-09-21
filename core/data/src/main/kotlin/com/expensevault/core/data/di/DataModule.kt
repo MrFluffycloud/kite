@@ -13,10 +13,11 @@ val dataModule = module {
     single<DebtRepository> { DebtRepositoryImpl(get(), get()) }
     single<PersonRepository> { PersonRepositoryImpl(get(), get()) }
     single<ExchangeRateRepository> { ExchangeRateRepositoryImpl(get(), get()) }
-    single<BudgetRepository> { BudgetRepositoryImpl(get()) }
+    single<BudgetRepository> { BudgetRepositoryImpl(get(), androidContext()) }
     single<RecurringRepository> { RecurringRepositoryImpl(get()) }
     single { com.expensevault.core.data.remote.BinanceApiService(get()) }
     single { com.expensevault.core.data.remote.Web3RpcService(get()) }
+    single<SpendAdvisorRepository> { com.expensevault.core.data.remote.SpendAdvisorService(get()) }
     single<BinanceRepository> { BinanceRepositoryImpl(get(), get(), get(), get(), get()) }
 
     // Use cases
