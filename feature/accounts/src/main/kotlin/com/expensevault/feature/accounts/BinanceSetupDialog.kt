@@ -42,7 +42,8 @@ fun BinanceSetupDialog(
     onSaveAndSync: (apiKey: String, apiSecret: String) -> Unit,
     onTestConnection: (apiKey: String, apiSecret: String, onResult: (Boolean, String?) -> Unit) -> Unit,
     onSyncNow: () -> Unit,
-    onUnlink: () -> Unit
+    onUnlink: () -> Unit,
+    onUpdateWallets: ((Set<String>) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -320,6 +321,23 @@ fun BinanceSetupDialog(
                     }
                 }
 
+                // Wallets to include toggle section
+                Spacer(modifier = Modifier.height(14.dp))
+                WalletsToggleSection(
+                    enabledWallets = syncState.enabledWallets,
+                    onToggleWallet = { toggled ->
+                        val current = syncState.enabledWallets.toMutableSet()
+                        if (current.any { it.equals(toggled, ignoreCase = true) }) {
+                            if (current.size > 1) {
+                                current.removeIf { it.equals(toggled, ignoreCase = true) }
+                            }
+                        } else {
+                            current.add(toggled)
+                        }
+                        onUpdateWallets?.invoke(current)
+                    }
+                )
+
                 // Asset breakdown list if available
                 if (syncState.assets.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(14.dp))
@@ -347,12 +365,29 @@ fun BinanceSetupDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(
-                                        text = asset.asset,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = InkPrimary
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = asset.asset,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = InkPrimary
+                                        )
+                                        val wallet = asset.walletName
+                                        if (!wallet.isNullOrBlank()) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = NeutralMuted,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = wallet,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                    color = InkSecondary,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                     Text(
                                         text = "${asset.free} free",
                                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
@@ -444,5 +479,61 @@ fun BinanceSetupDialog(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun WalletsToggleSection(
+    enabledWallets: Set<String>,
+    onToggleWallet: (String) -> Unit
+) {
+    val walletOptions = listOf(
+        "Spot" to "Spot",
+        "Funding" to "Funding (Pay/P2P)",
+        "Earn" to "Earn",
+        "Futures" to "Futures",
+        "Margin" to "Margin"
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Wallets to include in balance",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = InkSecondary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(walletOptions) { (key, label) ->
+                val isSelected = enabledWallets.any { it.equals(key, ignoreCase = true) }
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onToggleWallet(key) },
+                    shape = RoundedCornerShape(50),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = HeroBlack,
+                        selectedLabelColor = NeutralBg,
+                        containerColor = NeutralBg,
+                        labelColor = InkSecondary
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isSelected,
+                        borderColor = if (isSelected) HeroBlack else Hairline,
+                        borderWidth = 1.dp
+                    ),
+                    label = {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                )
+            }
+        }
     }
 }

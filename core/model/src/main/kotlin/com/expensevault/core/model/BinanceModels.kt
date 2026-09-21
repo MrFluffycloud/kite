@@ -20,7 +20,8 @@ data class BinanceAssetBalance(
     val asset: String,
     val free: String,
     val locked: String,
-    val fiatValue: String = "0"
+    val fiatValue: String = "0",
+    val walletName: String? = null
 ) {
     val totalAmount: BigDecimal
         get() = try {
@@ -48,5 +49,6 @@ data class BinanceSyncState(
     val totalFiatBalance: BigDecimal = BigDecimal.ZERO,
     val assets: List<BinanceAssetBalance> = emptyList(),
     val isSyncing: Boolean = false,
-    val lastError: String? = null
+    val lastError: String? = null,
+    val enabledWallets: Set<String> = setOf("Spot", "Funding", "Earn", "Futures", "Margin")
 )

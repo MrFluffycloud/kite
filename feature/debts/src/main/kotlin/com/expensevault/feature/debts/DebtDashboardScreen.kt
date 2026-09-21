@@ -61,6 +61,7 @@ fun DebtDashboardScreen(
     onPersonClick: (Long) -> Unit,
     onAddDebtClick: () -> Unit,
     onSplitExpenseClick: () -> Unit,
+    onDebtClick: ((personId: Long, debtId: Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: DebtDashboardViewModel = koinViewModel()
 ) {
@@ -408,7 +409,10 @@ fun DebtDashboardScreen(
                                 Box(modifier = Modifier.staggeredEntry(index = index, reduceMotion = reduceMotion)) {
                                     OpenDebtCard(
                                         item = debtItem,
-                                        currencyFormat = currencyFormat
+                                        currencyFormat = currencyFormat,
+                                        onClick = if (onDebtClick != null) {
+                                            { onDebtClick(debtItem.debt.personId, debtItem.debt.id) }
+                                        } else null
                                     )
                                 }
                             }
@@ -506,9 +510,12 @@ fun PersonSummaryCard(
 @Composable
 fun OpenDebtCard(
     item: OpenDebtItem,
-    currencyFormat: NumberFormat
+    currencyFormat: NumberFormat,
+    onClick: (() -> Unit)? = null
 ) {
     Card(
+        onClick = onClick ?: {},
+        enabled = onClick != null,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = NeutralCard),

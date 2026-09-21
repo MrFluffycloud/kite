@@ -24,6 +24,7 @@ data class PersonDetailUiState(
     val openDebts: List<DebtRecord> = emptyList(),
     val settlements: List<Settlement> = emptyList(),
     val showSettleDialog: Boolean = false,
+    val showEditPersonDialog: Boolean = false,
     val isSettling: Boolean = false,
     val errorMessage: String? = null
 )
@@ -80,6 +81,27 @@ class PersonDetailViewModel(
 
     fun dismissSettleDialog() {
         _uiState.update { it.copy(showSettleDialog = false) }
+    }
+
+    fun showEditPersonDialog() {
+        _uiState.update { it.copy(showEditPersonDialog = true) }
+    }
+
+    fun dismissEditPersonDialog() {
+        _uiState.update { it.copy(showEditPersonDialog = false) }
+    }
+
+    fun updatePerson(name: String, phone: String?) {
+        val current = _uiState.value.person ?: return
+        viewModelScope.launch {
+            try {
+                val updated = current.copy(name = name.trim(), phone = phone?.trim()?.takeIf { it.isNotBlank() })
+                personRepository.updatePerson(updated)
+                _uiState.update { it.copy(person = updated, showEditPersonDialog = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Failed to update person") }
+            }
+        }
     }
 
     fun settleDebts(note: String? = null, amount: BigDecimal? = null) {

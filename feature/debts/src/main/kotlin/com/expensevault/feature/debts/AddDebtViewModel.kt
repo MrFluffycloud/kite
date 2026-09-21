@@ -26,6 +26,9 @@ data class AddDebtUiState(
     val note: String = "",
     val isSaving: Boolean = false,
     val saveSuccess: Boolean = false,
+    val isDeleting: Boolean = false,
+    val deleteSuccess: Boolean = false,
+    val isEditMode: Boolean = false,
     val errorMessage: String? = null,
     val showAddPersonDialog: Boolean = false
 )
@@ -37,9 +40,14 @@ class AddDebtViewModel(
 ) : ViewModel() {
 
     private val initialPersonId: Long? = savedStateHandle.get<Long>("personId")?.takeIf { it > 0 }
+    private val initialDebtId: Long = savedStateHandle.get<Long>("debtId") ?: 0L
+    private var existingRecord: DebtRecord? = null
 
     private val _uiState = MutableStateFlow(
-        AddDebtUiState(selectedPersonId = initialPersonId)
+        AddDebtUiState(
+            selectedPersonId = initialPersonId,
+            isEditMode = initialDebtId > 0
+        )
     )
     val uiState: StateFlow<AddDebtUiState> = _uiState.asStateFlow()
 
@@ -47,6 +55,25 @@ class AddDebtViewModel(
         viewModelScope.launch {
             personRepository.getPersons().collect { list ->
                 _uiState.update { it.copy(persons = list) }
+            }
+        }
+
+        if (initialDebtId > 0) {
+            viewModelScope.launch {
+                val record = debtRepository.getDebtById(initialDebtId)
+                if (record != null) {
+                    existingRecord = record
+                    _uiState.update {
+                        it.copy(
+                            isEditMode = true,
+                            selectedPersonId = record.personId,
+                            amountString = record.amount.toPlainString(),
+                            direction = record.direction,
+                            currency = record.currency,
+                            note = record.note ?: ""
+                        )
+                    }
+                }
             }
         }
     }
@@ -111,22 +138,48 @@ class AddDebtViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
             try {
-                debtRepository.addDebt(
-                    DebtRecord(
-                        id = 0,
+                if (state.isEditMode && existingRecord != null) {
+                    val updated = existingRecord!!.copy(
                         personId = personId,
                         amount = amount,
-                        currency = state.currency,
                         direction = state.direction,
-                        status = DebtStatus.OPEN,
                         note = state.note.takeIf { it.isNotBlank() },
-                        createdAt = Clock.System.now()
+                        currency = state.currency
                     )
-                )
+                    debtRepository.updateDebt(updated)
+                } else {
+                    debtRepository.addDebt(
+                        DebtRecord(
+                            id = 0,
+                            personId = personId,
+                            amount = amount,
+                            currency = state.currency,
+                            direction = state.direction,
+                            status = DebtStatus.OPEN,
+                            note = state.note.takeIf { it.isNotBlank() },
+                            createdAt = Clock.System.now()
+                        )
+                    )
+                }
                 _uiState.update { it.copy(isSaving = false, saveSuccess = true) }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(isSaving = false, errorMessage = e.message ?: "Failed to save debt")
+                }
+            }
+        }
+    }
+
+    fun deleteDebt() {
+        if (initialDebtId <= 0) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDeleting = true) }
+            try {
+                debtRepository.deleteDebt(initialDebtId)
+                _uiState.update { it.copy(isDeleting = false, deleteSuccess = true) }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isDeleting = false, errorMessage = e.message ?: "Failed to delete debt")
                 }
             }
         }

@@ -32,11 +32,15 @@ private val NeutralBg = Color(0xFFFAFAF9)
 
 @Composable
 fun AddPersonDialog(
+    initialName: String = "",
+    initialPhone: String = "",
+    title: String = "Add Person",
+    confirmText: String = "Add",
     onDismiss: () -> Unit,
     onConfirm: (name: String, phone: String?) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
+    var phone by remember { mutableStateOf(initialPhone) }
     var isError by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -45,7 +49,7 @@ fun AddPersonDialog(
         shape = RoundedCornerShape(24.dp),
         title = {
             Text(
-                text = "Add Person",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = InkPrimary
@@ -113,7 +117,7 @@ fun AddPersonDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = HeroBlack, contentColor = NeutralBg),
                 shape = RoundedCornerShape(50)
             ) {
-                Text("Add", fontWeight = FontWeight.SemiBold)
+                Text(confirmText, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {

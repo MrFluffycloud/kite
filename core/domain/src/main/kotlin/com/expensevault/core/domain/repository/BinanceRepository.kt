@@ -13,6 +13,7 @@ interface BinanceRepository {
     suspend fun saveCredentials(apiKey: String, apiSecret: String): Result<Unit>
     suspend fun testConnection(apiKey: String, apiSecret: String): Result<Unit>
     suspend fun syncAccount(baseCurrency: String): Result<Account>
+    suspend fun updateEnabledWallets(wallets: Set<String>, baseCurrency: String): Result<Unit>
     suspend fun unlinkAccount(): Result<Unit>
     suspend fun getLinkedAccountId(): Long?
 }

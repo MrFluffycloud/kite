@@ -21,6 +21,20 @@ import kotlinx.datetime.Clock
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+private data class RawWalletAsset(
+    val asset: String,
+    val free: String,
+    val locked: String,
+    val walletName: String
+)
+
+private data class AggregatedAsset(
+    val asset: String,
+    val free: BigDecimal,
+    val locked: BigDecimal,
+    val walletNames: String
+)
+
 class BinanceRepositoryImpl(
     private val apiService: BinanceApiService,
     private val credentialStore: BinanceCredentialStore,
@@ -31,7 +45,8 @@ class BinanceRepositoryImpl(
     private val _syncState = MutableStateFlow(
         BinanceSyncState(
             isLinked = credentialStore.isLinked(),
-            apiKeyMasked = credentialStore.getMaskedApiKey()
+            apiKeyMasked = credentialStore.getMaskedApiKey(),
+            enabledWallets = credentialStore.getEnabledWallets()
         )
     )
     override val syncState: StateFlow<BinanceSyncState> = _syncState.asStateFlow()
@@ -43,6 +58,7 @@ class BinanceRepositoryImpl(
                 it.copy(
                     isLinked = true,
                     apiKeyMasked = credentialStore.getMaskedApiKey(),
+                    enabledWallets = credentialStore.getEnabledWallets(),
                     lastError = null
                 )
             }
@@ -61,6 +77,19 @@ class BinanceRepositoryImpl(
         }
     }
 
+    override suspend fun updateEnabledWallets(wallets: Set<String>, baseCurrency: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            credentialStore.saveEnabledWallets(wallets)
+            _syncState.update { it.copy(enabledWallets = wallets) }
+            if (credentialStore.isLinked()) {
+                syncAccount(baseCurrency)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun syncAccount(baseCurrency: String): Result<Account> = withContext(Dispatchers.IO) {
         val creds = credentialStore.getCredentials()
             ?: return@withContext Result.failure(IllegalStateException("Binance account is not linked. Please provide API keys."))
@@ -68,24 +97,108 @@ class BinanceRepositoryImpl(
         _syncState.update { it.copy(isSyncing = true, lastError = null) }
 
         try {
-            // 1. Fetch live account balances from Binance
-            val accountDto = apiService.getAccountInfo(creds.apiKey, creds.apiSecret)
+            val enabledWallets = credentialStore.getEnabledWallets()
+            val rawAssets = mutableListOf<RawWalletAsset>()
+            var usedWalletEndpoint = false
 
-            // 2. Filter non-zero assets
-            val nonZeroBalances = accountDto.balances.filter {
-                val freeBd = it.free.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                val lockedBd = it.locked.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                freeBd.add(lockedBd) > BigDecimal.ZERO
+            // 1. Try Binance User Wallet Balance endpoint (/sapi/v1/asset/wallet/balance)
+            try {
+                val walletBalances = apiService.getWalletBalances(creds.apiKey, creds.apiSecret)
+                if (walletBalances.isNotEmpty()) {
+                    usedWalletEndpoint = true
+                    for (wallet in walletBalances) {
+                        val isEnabled = enabledWallets.any { enabled ->
+                            wallet.walletName.contains(enabled, ignoreCase = true) ||
+                            enabled.contains(wallet.walletName, ignoreCase = true)
+                        }
+                        if (isEnabled) {
+                            for (ab in wallet.assetBalances) {
+                                rawAssets.add(
+                                    RawWalletAsset(
+                                        asset = ab.asset,
+                                        free = ab.free,
+                                        locked = ab.locked,
+                                        walletName = wallet.walletName
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                usedWalletEndpoint = false
             }
 
-            // 3. Fetch current market prices in USDT
+            // 2. Fallback to Spot account + Funding wallet if wallet endpoint didn't provide balances
+            if (!usedWalletEndpoint) {
+                val isSpotEnabled = enabledWallets.any { it.equals("Spot", ignoreCase = true) }
+                val isFundingEnabled = enabledWallets.any { it.equals("Funding", ignoreCase = true) }
+
+                if (isSpotEnabled) {
+                    try {
+                        val spotAccount = apiService.getAccountInfo(creds.apiKey, creds.apiSecret)
+                        for (bal in spotAccount.balances) {
+                            rawAssets.add(
+                                RawWalletAsset(
+                                    asset = bal.asset,
+                                    free = bal.free,
+                                    locked = bal.locked,
+                                    walletName = "Spot"
+                                )
+                            )
+                        }
+                    } catch (e: Exception) {
+                        if (rawAssets.isEmpty() && !isFundingEnabled) throw e
+                    }
+                }
+
+                if (isFundingEnabled) {
+                    try {
+                        val fundingAssets = apiService.getFundingAssets(creds.apiKey, creds.apiSecret)
+                        for (fa in fundingAssets) {
+                            rawAssets.add(
+                                RawWalletAsset(
+                                    asset = fa.asset,
+                                    free = fa.free,
+                                    locked = fa.locked,
+                                    walletName = "Funding"
+                                )
+                            )
+                        }
+                    } catch (_: Exception) {
+                        // Keep any spot assets if funding call failed
+                    }
+                }
+            }
+
+            // 3. Aggregate balances across all enabled wallets by asset symbol
+            val grouped = rawAssets.groupBy { it.asset.uppercase() }
+            val aggregatedList = mutableListOf<AggregatedAsset>()
+
+            for ((asset, items) in grouped) {
+                var totalFree = BigDecimal.ZERO
+                var totalLocked = BigDecimal.ZERO
+                val distinctWallets = items.map { it.walletName }.distinct().joinToString(", ")
+                for (item in items) {
+                    val f = item.free.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                    val l = item.locked.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                    totalFree = totalFree.add(f)
+                    totalLocked = totalLocked.add(l)
+                }
+                val totalQty = totalFree.add(totalLocked)
+                if (totalQty > BigDecimal.ZERO) {
+                    aggregatedList.add(AggregatedAsset(asset, totalFree, totalLocked, distinctWallets))
+                }
+            }
+
+            // 4. Fetch current market prices in USDT
             val pricesMap = try {
                 apiService.getPriceTickers().associate { it.symbol to (it.price.toBigDecimalOrNull() ?: BigDecimal.ZERO) }
             } catch (_: Exception) {
                 emptyMap()
             }
 
-            // 4. Resolve exchange rate to target baseCurrency (e.g. INR)
+            // 5. Resolve exchange rate to target baseCurrency (e.g. INR)
             val fiatRate = if (baseCurrency.equals("USD", ignoreCase = true) || baseCurrency.equals("USDT", ignoreCase = true)) {
                 BigDecimal.ONE
             } else {
@@ -98,16 +211,14 @@ class BinanceRepositoryImpl(
                 }
             }
 
-            // 5. Calculate fiat value per asset
+            // 6. Calculate fiat value per asset
             val btcUsdtPrice = pricesMap["BTCUSDT"] ?: BigDecimal.ZERO
             val holdingList = mutableListOf<BinanceAssetBalance>()
             var totalFiat = BigDecimal.ZERO
 
-            for (bal in nonZeroBalances) {
-                val asset = bal.asset
-                val freeBd = bal.free.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                val lockedBd = bal.locked.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                val totalQty = freeBd.add(lockedBd)
+            for (item in aggregatedList) {
+                val asset = item.asset
+                val totalQty = item.free.add(item.locked)
 
                 val usdtPrice = when {
                     asset.equals("USDT", ignoreCase = true) ||
@@ -127,9 +238,10 @@ class BinanceRepositoryImpl(
                 holdingList.add(
                     BinanceAssetBalance(
                         asset = asset,
-                        free = bal.free,
-                        locked = bal.locked,
-                        fiatValue = assetFiatValue.toPlainString()
+                        free = item.free.toPlainString(),
+                        locked = item.locked.toPlainString(),
+                        fiatValue = assetFiatValue.toPlainString(),
+                        walletName = item.walletNames
                     )
                 )
             }
@@ -137,7 +249,7 @@ class BinanceRepositoryImpl(
             // Sort holdings by largest fiat value first
             holdingList.sortByDescending { it.fiatBigDecimal }
 
-            // 6. Find or create the Binance Account in Kite database
+            // 7. Find or create the Binance Account in Kite database
             val existingAccounts = accountRepository.getAccounts().first()
             val existingBinanceAccount = existingAccounts.find { it.type == AccountType.BINANCE }
 
@@ -173,6 +285,7 @@ class BinanceRepositoryImpl(
                     accountId = savedAccount.id,
                     totalFiatBalance = totalFiat,
                     assets = holdingList,
+                    enabledWallets = enabledWallets,
                     isSyncing = false,
                     lastError = null
                 )
@@ -198,7 +311,8 @@ class BinanceRepositoryImpl(
                     totalFiatBalance = BigDecimal.ZERO,
                     assets = emptyList(),
                     isSyncing = false,
-                    lastError = null
+                    lastError = null,
+                    enabledWallets = credentialStore.getEnabledWallets()
                 )
             }
             Result.success(Unit)

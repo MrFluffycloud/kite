@@ -308,6 +308,9 @@ fun KiteNavHost(
                     },
                     onSplitExpenseClick = {
                         navController.navigate(NavRoute.SplitExpense())
+                    },
+                    onDebtClick = { personId, debtId ->
+                        navController.navigate(NavRoute.AddDebt(personId = personId, debtId = debtId))
                     }
                 )
             }
@@ -318,6 +321,9 @@ fun KiteNavHost(
                     onNavigateBack = { navController.popBackStack() },
                     onAddDebtForPerson = { id ->
                         navController.navigate(NavRoute.AddDebt(personId = id))
+                    },
+                    onEditDebt = { debtId ->
+                        navController.navigate(NavRoute.AddDebt(personId = route.personId, debtId = debtId))
                     }
                 )
             }

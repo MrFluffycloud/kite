@@ -42,11 +42,18 @@ class DebtRepositoryImpl(
         return balance
     }
 
+    override suspend fun getDebtById(id: Long): DebtRecord? =
+        debtRecordDao.getById(id)?.toDomain()
+
     override suspend fun addDebt(debt: DebtRecord): Long =
         debtRecordDao.insert(debt.toEntity())
 
     override suspend fun updateDebt(debt: DebtRecord) {
         debtRecordDao.update(debt.toEntity())
+    }
+
+    override suspend fun deleteDebt(id: Long) {
+        debtRecordDao.deleteById(id)
     }
 
     override suspend fun settleDebts(personId: Long, debtIds: List<Long>, settlement: Settlement) {

@@ -899,7 +899,8 @@ fun SettingsScreen(
             onSaveAndSync = { key, secret -> viewModel.saveBinanceCredentials(key, secret) },
             onTestConnection = { key, secret, cb -> viewModel.testBinanceConnection(key, secret, cb) },
             onSyncNow = { viewModel.syncBinanceNow() },
-            onUnlink = { viewModel.unlinkBinance() }
+            onUnlink = { viewModel.unlinkBinance() },
+            onUpdateWallets = { wallets -> viewModel.updateBinanceWallets(wallets) }
         )
     }
 

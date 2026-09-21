@@ -114,6 +114,12 @@ class SettingsViewModel(
         }
     }
 
+    fun updateBinanceWallets(wallets: Set<String>) {
+        viewModelScope.launch {
+            binanceRepository.updateEnabledWallets(wallets, _uiState.value.baseCurrency)
+        }
+    }
+
     private fun observeSecuritySettings() {
         viewModelScope.launch {
             appLockManager.isAppLockEnabled.collect { enabled ->

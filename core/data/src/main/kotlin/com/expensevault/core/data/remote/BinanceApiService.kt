@@ -44,6 +44,34 @@ data class BinanceErrorDto(
     val msg: String = ""
 )
 
+@Serializable
+data class BinanceWalletAssetBalanceDto(
+    val asset: String,
+    val free: String = "0",
+    val locked: String = "0",
+    val freeze: String = "0",
+    val withdrawing: String = "0",
+    val btcValuation: String = "0"
+)
+
+@Serializable
+data class BinanceWalletBalanceDto(
+    val activate: Boolean = true,
+    val balance: String = "0",
+    val walletName: String,
+    val assetBalances: List<BinanceWalletAssetBalanceDto> = emptyList()
+)
+
+@Serializable
+data class BinanceFundingAssetDto(
+    val asset: String,
+    val free: String = "0",
+    val locked: String = "0",
+    val freeze: String = "0",
+    val withdrawing: String = "0",
+    val btcValuation: String = "0"
+)
+
 class BinanceApiService(
     private val httpClient: HttpClient
 ) {
@@ -95,6 +123,60 @@ class BinanceApiService(
         val fullUrl = "$BASE_URL/api/v3/account?$queryString&signature=$signature"
 
         val response = httpClient.get(fullUrl) {
+            header("X-MBX-APIKEY", apiKey)
+        }
+
+        if (response.status.isSuccess()) {
+            return response.body()
+        } else {
+            val errorText = response.bodyAsText()
+            val parsedError = try {
+                jsonParser.decodeFromString<BinanceErrorDto>(errorText)
+            } catch (_: Exception) {
+                null
+            }
+            val msg = parsedError?.msg?.takeIf { it.isNotBlank() } ?: "HTTP ${response.status.value}: $errorText"
+            throw IllegalStateException("Binance Error: $msg")
+        }
+    }
+
+    /**
+     * Queries user wallet balances across all Binance wallets (Spot, Funding, Cross Margin, Earn, Futures, etc.).
+     */
+    suspend fun getWalletBalances(apiKey: String, apiSecret: String): List<BinanceWalletBalanceDto> {
+        val serverTime = getServerTime()
+        val queryString = "needBalanceDetail=true&timestamp=$serverTime&recvWindow=$RECV_WINDOW"
+        val signature = sign(queryString, apiSecret)
+        val fullUrl = "$BASE_URL/sapi/v1/asset/wallet/balance?$queryString&signature=$signature"
+
+        val response = httpClient.get(fullUrl) {
+            header("X-MBX-APIKEY", apiKey)
+        }
+
+        if (response.status.isSuccess()) {
+            return response.body()
+        } else {
+            val errorText = response.bodyAsText()
+            val parsedError = try {
+                jsonParser.decodeFromString<BinanceErrorDto>(errorText)
+            } catch (_: Exception) {
+                null
+            }
+            val msg = parsedError?.msg?.takeIf { it.isNotBlank() } ?: "HTTP ${response.status.value}: $errorText"
+            throw IllegalStateException("Binance Error: $msg")
+        }
+    }
+
+    /**
+     * Queries assets held in the Funding wallet (Binance Pay, P2P, Cards, Gift Cards).
+     */
+    suspend fun getFundingAssets(apiKey: String, apiSecret: String): List<BinanceFundingAssetDto> {
+        val serverTime = getServerTime()
+        val queryString = "timestamp=$serverTime&recvWindow=$RECV_WINDOW"
+        val signature = sign(queryString, apiSecret)
+        val fullUrl = "$BASE_URL/sapi/v1/asset/get-funding-asset?$queryString&signature=$signature"
+
+        val response = httpClient.post(fullUrl) {
             header("X-MBX-APIKEY", apiKey)
         }
 

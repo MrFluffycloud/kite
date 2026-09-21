@@ -25,6 +25,8 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
         private const val PREF_API_KEY = "binance_api_key"
         private const val PREF_ENCRYPTED_SECRET = "binance_encrypted_secret"
         private const val PREF_SECRET_IV = "binance_secret_iv"
+        private const val PREF_ENABLED_WALLETS = "binance_enabled_wallets"
+        private val DEFAULT_WALLETS = setOf("Spot", "Funding", "Earn", "Futures", "Margin")
         private const val GCM_TAG_LENGTH = 128
     }
 
@@ -108,5 +110,14 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
         } else {
             "****"
         }
+    }
+
+    override fun getEnabledWallets(): Set<String> {
+        val stored = prefs.getStringSet(PREF_ENABLED_WALLETS, null)
+        return stored ?: DEFAULT_WALLETS
+    }
+
+    override fun saveEnabledWallets(wallets: Set<String>) {
+        prefs.edit().putStringSet(PREF_ENABLED_WALLETS, wallets).apply()
     }
 }

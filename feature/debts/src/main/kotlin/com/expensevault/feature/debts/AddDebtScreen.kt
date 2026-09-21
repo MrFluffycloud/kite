@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,9 +46,10 @@ fun AddDebtScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.saveSuccess) {
-        if (uiState.saveSuccess) {
+    LaunchedEffect(uiState.saveSuccess, uiState.deleteSuccess) {
+        if (uiState.saveSuccess || uiState.deleteSuccess) {
             onNavigateBack()
         }
     }
@@ -66,6 +68,44 @@ fun AddDebtScreen(
         )
     }
 
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = NeutralCard,
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "Delete debt?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = InkPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "This debt entry will be permanently removed and the person's net balance will be updated.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteDebt()
+                    }
+                ) {
+                    Text("Delete", color = Color(0xFFB5533C), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel", color = InkSecondary)
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = modifier,
         containerColor = NeutralBg,
@@ -74,7 +114,7 @@ fun AddDebtScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Record debt",
+                        text = if (uiState.isEditMode) "Edit debt" else "Record debt",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = InkPrimary
@@ -87,6 +127,17 @@ fun AddDebtScreen(
                             contentDescription = "Back",
                             tint = InkPrimary
                         )
+                    }
+                },
+                actions = {
+                    if (uiState.isEditMode) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete debt",
+                                tint = Color(0xFFB5533C)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -270,7 +321,7 @@ fun AddDebtScreen(
                 if (uiState.isSaving) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), color = NeutralBg)
                 } else {
-                    Text("Save debt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (uiState.isEditMode) "Update debt" else "Save debt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

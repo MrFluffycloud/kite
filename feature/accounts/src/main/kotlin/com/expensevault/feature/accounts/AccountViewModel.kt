@@ -111,6 +111,14 @@ class AccountViewModel(
         }
     }
 
+    fun updateBinanceWallets(wallets: Set<String>) {
+        viewModelScope.launch {
+            val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
+            val baseCurrency = prefs.getString("pref_base_currency", "INR") ?: "INR"
+            binanceRepository.updateEnabledWallets(wallets, baseCurrency)
+        }
+    }
+
     fun setDefaultAccount(accountId: Long) {
         val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
         prefs.edit().putLong("pref_default_account_id", accountId).apply()

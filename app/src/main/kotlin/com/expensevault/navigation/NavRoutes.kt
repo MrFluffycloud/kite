@@ -18,7 +18,7 @@ sealed interface NavRoute {
     @Serializable data object Budgets : NavRoute
     @Serializable data object Debts : NavRoute
     @Serializable data class PersonDetail(val personId: Long) : NavRoute
-    @Serializable data class AddDebt(val personId: Long = 0L) : NavRoute
+    @Serializable data class AddDebt(val personId: Long = 0L, val debtId: Long = 0L) : NavRoute
     @Serializable data class SplitExpense(val transactionId: Long = 0L) : NavRoute
     @Serializable data object VaultLock : NavRoute
     @Serializable data object VaultDashboard : NavRoute

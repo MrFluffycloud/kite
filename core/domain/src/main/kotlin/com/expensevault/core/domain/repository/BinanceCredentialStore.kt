@@ -11,4 +11,6 @@ interface BinanceCredentialStore {
     fun clearCredentials()
     fun isLinked(): Boolean
     fun getMaskedApiKey(): String
+    fun getEnabledWallets(): Set<String>
+    fun saveEnabledWallets(wallets: Set<String>)
 }

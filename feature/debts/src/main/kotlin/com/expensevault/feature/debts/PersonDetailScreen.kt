@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.expensevault.core.model.DebtDirection
+import com.expensevault.feature.debts.components.AddPersonDialog
 import org.koin.androidx.compose.koinViewModel
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -47,6 +49,7 @@ fun PersonDetailScreen(
     personId: Long,
     onNavigateBack: () -> Unit,
     onAddDebtForPerson: (Long) -> Unit,
+    onEditDebt: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PersonDetailViewModel = koinViewModel()
 ) {
@@ -207,6 +210,18 @@ fun PersonDetailScreen(
         )
     }
 
+    if (uiState.showEditPersonDialog && uiState.person != null) {
+        val person = uiState.person!!
+        AddPersonDialog(
+            initialName = person.name,
+            initialPhone = person.phone ?: "",
+            title = "Edit Person",
+            confirmText = "Update",
+            onDismiss = { viewModel.dismissEditPersonDialog() },
+            onConfirm = { name, phone -> viewModel.updatePerson(name, phone) }
+        )
+    }
+
     Scaffold(
         modifier = modifier,
         containerColor = NeutralBg,
@@ -226,6 +241,15 @@ fun PersonDetailScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
+                            tint = InkPrimary
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.showEditPersonDialog() }) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Edit person",
                             tint = InkPrimary
                         )
                     }
@@ -369,6 +393,7 @@ fun PersonDetailScreen(
             } else {
                 items(uiState.openDebts, key = { it.id }) { debt ->
                     Card(
+                        onClick = { onEditDebt(debt.id) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = NeutralCard),
