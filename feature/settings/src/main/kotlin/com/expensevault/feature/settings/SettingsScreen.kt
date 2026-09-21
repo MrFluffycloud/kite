@@ -1044,9 +1044,31 @@ fun SettingsScreen(
                                 color = InkSecondary
                             )
                         }
+
+                        if (uiState.isDownloadingUpdate) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            LinearProgressIndicator(
+                                progress = { uiState.updateDownloadProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = HeroBlack,
+                                trackColor = NeutralMuted
+                            )
+                        }
+
+                        if (uiState.updateDownloadStatus != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = uiState.updateDownloadStatus!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (uiState.updateDownloadStatus!!.startsWith("Download failed")) MutedClay else InkSecondary
+                            )
+                        }
                     } else {
                         Text(
-                            text = "You are currently running the latest version of Kite (${update?.currentVersion ?: "0.2.0"}).",
+                            text = "You are currently running the latest version of Kite (${update?.currentVersion ?: "0.3.0"}).",
                             style = MaterialTheme.typography.bodyMedium,
                             color = InkSecondary
                         )
@@ -1055,17 +1077,40 @@ fun SettingsScreen(
             },
             confirmButton = {
                 if (update?.isUpdateAvailable == true) {
-                    val targetUrl = update.apkDownloadUrl ?: update.releasePageUrl
-                    Button(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
-                            context.startActivity(intent)
-                            viewModel.hideUpdateDialog()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(if (update.apkDownloadUrl != null) "Download APK" else "View on GitHub", color = NeutralBg)
+                    if (uiState.isDownloadingUpdate) {
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = NeutralBg)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloading...", color = NeutralBg)
+                        }
+                    } else if (uiState.downloadedApkPath != null) {
+                        Button(
+                            onClick = { viewModel.triggerApkInstall(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Install Update", color = NeutralBg, fontWeight = FontWeight.SemiBold)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (update.apkDownloadUrl != null) {
+                                    viewModel.downloadAndInstallUpdate(context)
+                                } else {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.releasePageUrl))
+                                    context.startActivity(intent)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (update.apkDownloadUrl != null) "Update Now" else "View on GitHub", color = NeutralBg, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 } else {
                     TextButton(onClick = { viewModel.hideUpdateDialog() }) {
@@ -1074,7 +1119,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                if (update?.isUpdateAvailable == true) {
+                if (update?.isUpdateAvailable == true && !uiState.isDownloadingUpdate) {
                     TextButton(onClick = { viewModel.hideUpdateDialog() }) {
                         Text("Later", color = InkSecondary)
                     }

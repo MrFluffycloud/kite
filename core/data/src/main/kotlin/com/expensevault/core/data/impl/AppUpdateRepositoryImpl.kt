@@ -98,4 +98,71 @@ class AppUpdateRepositoryImpl(
         }
         return false
     }
+
+    override suspend fun downloadApk(
+        downloadUrl: String,
+        destinationFile: java.io.File,
+        onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): Result<java.io.File> = withContext(Dispatchers.IO) {
+        try {
+            destinationFile.parentFile?.mkdirs()
+            if (destinationFile.exists()) {
+                destinationFile.delete()
+            }
+
+            var currentUrl = downloadUrl
+            var connection: java.net.HttpURLConnection? = null
+            var redirects = 0
+
+            while (true) {
+                val url = java.net.URL(currentUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("User-Agent", "Kite-App")
+                conn.connect()
+                val responseCode = conn.responseCode
+                if (responseCode in 300..399) {
+                    val location = conn.getHeaderField("Location") ?: break
+                    currentUrl = location
+                    conn.disconnect()
+                    redirects++
+                    if (redirects > 5) break
+                } else {
+                    connection = conn
+                    break
+                }
+            }
+
+            val finalConn = connection ?: return@withContext Result.failure(IllegalStateException("Failed to connect to download URL"))
+            if (finalConn.responseCode !in 200..299) {
+                return@withContext Result.failure(IllegalStateException("HTTP ${finalConn.responseCode}: Failed to download APK"))
+            }
+
+            val contentLength = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                finalConn.contentLengthLong
+            } else {
+                finalConn.contentLength.toLong()
+            }
+            var totalRead = 0L
+
+            finalConn.inputStream.use { input ->
+                destinationFile.outputStream().use { output ->
+                    val buffer = ByteArray(32768)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalRead += bytesRead
+                        val prog = if (contentLength > 0) totalRead.toFloat() / contentLength.toFloat() else 0f
+                        onProgress(prog, totalRead, contentLength)
+                    }
+                }
+            }
+
+            Result.success(destinationFile)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

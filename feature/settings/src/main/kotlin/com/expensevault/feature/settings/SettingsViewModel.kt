@@ -1,6 +1,11 @@
 package com.expensevault.feature.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +23,7 @@ import com.expensevault.core.domain.usecase.ImportDataUseCase
 import com.expensevault.platform.security.AppLockManager
 import com.expensevault.platform.security.BiometricAuthManager
 import com.expensevault.platform.security.BiometricAvailability
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +36,7 @@ data class SettingsUiState(
     val defaultAccountId: Long = -1L,
     val defaultAccountName: String = "Main wallet",
     val isAppLockEnabled: Boolean = false,
+    val biometricAvailability: BiometricAvailability = BiometricAvailability.AVAILABLE,
     val isNotificationDetectionEnabled: Boolean = false,
     val showCurrencyDialog: Boolean = false,
     val showDefaultAccountDialog: Boolean = false,
@@ -46,7 +53,12 @@ data class SettingsUiState(
     val isClearingData: Boolean = false,
     val isCheckingForUpdates: Boolean = false,
     val updateInfo: AppUpdateInfo? = null,
-    val showUpdateDialog: Boolean = false
+    val showUpdateDialog: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateDownloadProgress: Float = 0f,
+    val updateDownloadStatus: String? = null,
+    val downloadedApkPath: String? = null,
+    val installPermissionRequired: Boolean = false
 )
 
 class SettingsViewModel(
@@ -279,7 +291,98 @@ class SettingsViewModel(
     }
 
     fun hideUpdateDialog() {
-        _uiState.update { it.copy(showUpdateDialog = false) }
+        _uiState.update {
+            it.copy(
+                showUpdateDialog = false,
+                isDownloadingUpdate = false,
+                updateDownloadStatus = null
+            )
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: Context) {
+        val update = _uiState.value.updateInfo ?: return
+        val url = update.apkDownloadUrl ?: return
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateDownloadProgress = 0f,
+                    updateDownloadStatus = "Starting download..."
+                )
+            }
+
+            val apkFile = File(context.cacheDir, "kite-update.apk")
+            val result = appUpdateRepository.downloadApk(url, apkFile) { progress, downloaded, total ->
+                val mbDownloaded = downloaded.toDouble() / (1024 * 1024)
+                val mbTotal = total.toDouble() / (1024 * 1024)
+                val text = if (total > 0) {
+                    "Downloading update... %.1f MB / %.1f MB (%.0f%%)".format(mbDownloaded, mbTotal, progress * 100)
+                } else {
+                    "Downloading update... %.1f MB".format(mbDownloaded)
+                }
+                _uiState.update {
+                    it.copy(
+                        updateDownloadProgress = progress,
+                        updateDownloadStatus = text
+                    )
+                }
+            }
+
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        downloadedApkPath = apkFile.absolutePath,
+                        updateDownloadStatus = "Download complete!"
+                    )
+                }
+                triggerApkInstall(context, apkFile)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateDownloadStatus = "Download failed: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun triggerApkInstall(context: Context, apkFile: File? = null) {
+        val file = apkFile ?: _uiState.value.downloadedApkPath?.let { File(it) } ?: return
+        if (!file.exists()) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!context.packageManager.canRequestPackageInstalls()) {
+                _uiState.update { it.copy(installPermissionRequired = true) }
+                val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+                return
+            }
+        }
+
+        try {
+            val apkUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(updateDownloadStatus = "Could not launch installer: ${e.message}")
+            }
+        }
     }
 
     fun showExportDialog() {
