@@ -54,12 +54,21 @@ fun BinanceSetupDialog(
     }
 
     // Web3 form state
-    var web3AddressInput by remember(syncState.web3Address) {
-        mutableStateOf(syncState.web3Address ?: "")
+    val parsedAddresses = remember(syncState.web3Address) {
+        com.expensevault.core.model.Web3AddressUtils.parseAddresses(syncState.web3Address)
+    }
+    var web3AddressInput by remember(parsedAddresses.first) {
+        mutableStateOf(parsedAddresses.first ?: (if (syncState.web3Address?.startsWith("0x") == true) syncState.web3Address else "") ?: "")
+    }
+    var btcAddressInput by remember(parsedAddresses.second) {
+        mutableStateOf(parsedAddresses.second ?: (if (syncState.web3Address != null && !syncState.web3Address!!.startsWith("0x")) syncState.web3Address else "") ?: "")
     }
     var selectedChains by remember(syncState.web3Chains) {
-        mutableStateOf(if (syncState.web3Chains.isNotEmpty()) syncState.web3Chains else setOf("BSC"))
+        mutableStateOf(if (syncState.web3Chains.isNotEmpty()) syncState.web3Chains else setOf(
+            "BITCOIN", "BSC", "ETHEREUM", "ARBITRUM", "POLYGON", "BASE", "OPTIMISM", "AVALANCHE"
+        ))
     }
+    var isEditingWeb3 by remember { mutableStateOf(false) }
     var web3ErrorMessage by remember { mutableStateOf<String?>(null) }
 
     // Exchange form state
@@ -190,7 +199,7 @@ fun BinanceSetupDialog(
             if (selectedTab == 0) {
                 val isWeb3Linked = syncState.isLinked && syncState.integrationType == BinanceIntegrationType.WEB3_WALLET
 
-                if (!isWeb3Linked) {
+                if (!isWeb3Linked || isEditingWeb3) {
                     // Guidance Card
                     Card(
                         shape = RoundedCornerShape(14.dp),
@@ -216,7 +225,7 @@ fun BinanceSetupDialog(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "1. Open Binance app → switch to 'Web3' tab at the top.\n2. Tap the copy icon next to your wallet address (0x...).\n3. Paste it below. No private keys or API keys needed!",
+                                text = "• EVM Chains (BSC, Ethereum, Arbitrum, Polygon, Base, etc.): Paste your 0x... address.\n• Native Bitcoin: Paste your Bitcoin address (bc1..., 1..., or 3...) to track native BTC.\n• No private keys or API keys needed — 100% on-device read-only.",
                                 style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
                                 color = InkSecondary
                             )
@@ -225,15 +234,15 @@ fun BinanceSetupDialog(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Web3 Address Input
+                    // EVM Address Input
                     OutlinedTextField(
                         value = web3AddressInput,
                         onValueChange = {
                             web3AddressInput = it
                             web3ErrorMessage = null
                         },
-                        label = { Text("Binance Web3 Wallet Address") },
-                        placeholder = { Text("0x...") },
+                        label = { Text("EVM Wallet Address (0x...)") },
+                        placeholder = { Text("0x... (BNB Chain, ETH, Arbitrum, Base, etc.)") },
                         singleLine = true,
                         leadingIcon = {
                             Icon(
@@ -257,44 +266,108 @@ fun BinanceSetupDialog(
                         )
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Native Bitcoin Address Input
+                    OutlinedTextField(
+                        value = btcAddressInput,
+                        onValueChange = {
+                            btcAddressInput = it
+                            web3ErrorMessage = null
+                        },
+                        label = { Text("Bitcoin Address (bc1..., 1..., 3...) - Optional") },
+                        placeholder = { Text("Native Bitcoin address from Binance Web3") },
+                        singleLine = true,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.CurrencyBitcoin,
+                                contentDescription = null,
+                                tint = BinanceGold
+                            )
+                        },
+                        trailingIcon = {
+                            if (btcAddressInput.isNotEmpty()) {
+                                IconButton(onClick = { btcAddressInput = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = InkSecondary)
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = HeroBlack,
+                            unfocusedBorderColor = Hairline
+                        )
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Network selector chips
-                    Text(
-                        text = "Networks to track",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = InkSecondary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val availableChains = listOf(
-                            "BSC" to "BNB Smart Chain",
-                            "ETHEREUM" to "Ethereum",
-                            "POLYGON" to "Polygon"
+                        Text(
+                            text = "Networks to scan (${selectedChains.size} active)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = InkSecondary
                         )
-                        availableChains.forEach { (id, label) ->
-                            val isSelected = selectedChains.contains(id)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    val updated = selectedChains.toMutableSet()
-                                    if (isSelected) {
-                                        if (updated.size > 1) updated.remove(id)
-                                    } else {
-                                        updated.add(id)
-                                    }
-                                    selectedChains = updated
-                                },
-                                label = { Text(label, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = HeroBlack,
-                                    selectedLabelColor = NeutralBg
+                        val allChainIds = listOf("BITCOIN", "BSC", "ETHEREUM", "ARBITRUM", "POLYGON", "BASE", "OPTIMISM", "AVALANCHE")
+                        val isAllSelected = selectedChains.containsAll(allChainIds)
+                        Text(
+                            text = if (isAllSelected) "Deselect All" else "Select All",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = InkPrimary,
+                            modifier = Modifier.clickable {
+                                selectedChains = if (isAllSelected) setOf("BITCOIN", "BSC") else allChainIds.toSet()
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val availableChains = listOf(
+                        "BITCOIN" to "Bitcoin",
+                        "BSC" to "BNB Chain",
+                        "ETHEREUM" to "Ethereum",
+                        "ARBITRUM" to "Arbitrum",
+                        "POLYGON" to "Polygon",
+                        "BASE" to "Base",
+                        "OPTIMISM" to "Optimism",
+                        "AVALANCHE" to "Avalanche"
+                    )
+
+                    availableChains.chunked(2).forEach { rowChains ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowChains.forEach { (id, label) ->
+                                val isSelected = selectedChains.contains(id)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        val updated = selectedChains.toMutableSet()
+                                        if (isSelected) {
+                                            if (updated.size > 1) updated.remove(id)
+                                        } else {
+                                            updated.add(id)
+                                        }
+                                        selectedChains = updated
+                                    },
+                                    label = { Text(label, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = HeroBlack,
+                                        selectedLabelColor = NeutralBg
+                                    ),
+                                    modifier = Modifier.weight(1f)
                                 )
-                            )
+                            }
+                            if (rowChains.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
 
@@ -309,24 +382,55 @@ fun BinanceSetupDialog(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    Button(
-                        onClick = {
-                            val clean = web3AddressInput.trim()
-                            if (!clean.startsWith("0x") || clean.length != 42) {
-                                web3ErrorMessage = "Please enter a valid 42-character EVM address starting with 0x"
-                            } else {
-                                onSaveWeb3Config?.invoke(clean, selectedChains)
-                            }
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !syncState.isSyncing
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (syncState.isSyncing) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = NeutralBg)
-                        } else {
-                            Text("Connect Web3 Wallet", color = NeutralBg, fontWeight = FontWeight.SemiBold)
+                        if (isEditingWeb3) {
+                            OutlinedButton(
+                                onClick = { isEditingWeb3 = false },
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Hairline),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancel", color = InkSecondary)
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                val evm = web3AddressInput.trim()
+                                val btc = btcAddressInput.trim()
+
+                                val effectiveEvm = if (com.expensevault.core.model.Web3AddressUtils.isEvmAddress(evm)) evm else ""
+                                val effectiveBtc = when {
+                                    com.expensevault.core.model.Web3AddressUtils.isBitcoinAddress(btc) -> btc
+                                    com.expensevault.core.model.Web3AddressUtils.isBitcoinAddress(evm) -> evm
+                                    else -> ""
+                                }
+
+                                if (effectiveEvm.isEmpty() && effectiveBtc.isEmpty()) {
+                                    web3ErrorMessage = "Please enter an EVM address (0x...) or a Bitcoin address (bc1..., 1..., 3...)"
+                                } else if (evm.isNotEmpty() && !com.expensevault.core.model.Web3AddressUtils.isEvmAddress(evm) && !com.expensevault.core.model.Web3AddressUtils.isBitcoinAddress(evm)) {
+                                    web3ErrorMessage = "Invalid EVM address (must start with 0x and be 42 characters)"
+                                } else if (btc.isNotEmpty() && !com.expensevault.core.model.Web3AddressUtils.isBitcoinAddress(btc)) {
+                                    web3ErrorMessage = "Invalid Bitcoin address (must start with bc1, 1, or 3)"
+                                } else {
+                                    val combined = com.expensevault.core.model.Web3AddressUtils.combineAddresses(effectiveEvm, effectiveBtc)
+                                    onSaveWeb3Config?.invoke(combined, selectedChains)
+                                    isEditingWeb3 = false
+                                }
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                            modifier = Modifier.weight(if (isEditingWeb3) 1.4f else 1f),
+                            enabled = !syncState.isSyncing
+                        ) {
+                            if (syncState.isSyncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = NeutralBg)
+                            } else {
+                                Text(if (isEditingWeb3) "Save & Resync" else "Connect Web3 Wallet", color = NeutralBg, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 } else {
@@ -473,7 +577,25 @@ fun BinanceSetupDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedButton(
+                        onClick = { isEditingWeb3 = true },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Hairline),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            tint = InkPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Configure Networks & Addresses", color = InkPrimary)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

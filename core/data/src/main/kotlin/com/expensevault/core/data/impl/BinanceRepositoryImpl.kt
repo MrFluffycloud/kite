@@ -179,8 +179,11 @@ class BinanceRepositoryImpl(
 
         for (item in onChainBalances) {
             val lookupSymbol = when (item.symbol) {
-                "BTCB", "WBTC" -> "BTC"
+                "BTC", "BTCB", "WBTC", "cbBTC", "BTC.b" -> "BTC"
                 "POL" -> "MATIC"
+                "AVAX" -> "AVAX"
+                "ARB" -> "ARB"
+                "OP" -> "OP"
                 else -> item.symbol
             }
 
@@ -201,9 +204,11 @@ class BinanceRepositoryImpl(
             val assetFiatValue = assetUsdtValue.multiply(fiatRate).setScale(2, RoundingMode.HALF_UP)
             totalFiat = totalFiat.add(assetFiatValue)
 
+            val displayAsset = if (lookupSymbol == "BTC") "BTC" else item.symbol
+
             holdingList.add(
                 BinanceAssetBalance(
-                    asset = item.symbol,
+                    asset = displayAsset,
                     free = item.balance.stripTrailingZeros().toPlainString(),
                     locked = "0",
                     fiatValue = assetFiatValue.toPlainString(),

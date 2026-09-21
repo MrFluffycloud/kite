@@ -38,4 +38,52 @@ class Web3RpcParsingTest {
         assertEquals(64, clean.length)
         assertEquals("0000000000000000000000008894e0a0c962cb723c1976a4421c95949be2d4e3", clean)
     }
+
+    @Test
+    fun testBitcoinAddressValidation() {
+        val utils = com.expensevault.core.model.Web3AddressUtils
+        // Legacy
+        assertEquals(true, utils.isBitcoinAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"))
+        // SegWit
+        assertEquals(true, utils.isBitcoinAddress("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"))
+        // Taproot
+        assertEquals(true, utils.isBitcoinAddress("bc1p5d7rjq7g6rdk2yhzks9s2uma66dn3x5aftyxnut7sp4aphmtqdgq93f6pq"))
+        // Nested SegWit
+        assertEquals(true, utils.isBitcoinAddress("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"))
+        // Invalid
+        assertEquals(false, utils.isBitcoinAddress("0x8894e0a0c962cb723c1976a4421c95949be2d4e3"))
+        assertEquals(false, utils.isBitcoinAddress("invalid_btc_address"))
+        assertEquals(false, utils.isBitcoinAddress(""))
+    }
+
+    @Test
+    fun testEvmAddressValidation() {
+        val utils = com.expensevault.core.model.Web3AddressUtils
+        assertEquals(true, utils.isEvmAddress("0x8894e0a0c962cb723c1976a4421c95949be2d4e3"))
+        assertEquals(false, utils.isEvmAddress("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"))
+        assertEquals(false, utils.isEvmAddress("0x123"))
+    }
+
+    @Test
+    fun testCombinedAddressParsing() {
+        val utils = com.expensevault.core.model.Web3AddressUtils
+        val evm = "0x8894e0a0c962cb723c1976a4421c95949be2d4e3"
+        val btc = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+
+        val combined = utils.combineAddresses(evm, btc)
+        val (parsedEvm, parsedBtc) = utils.parseAddresses(combined)
+
+        assertEquals(evm, parsedEvm)
+        assertEquals(btc, parsedBtc)
+
+        // Single EVM
+        val (onlyEvm, noBtc) = utils.parseAddresses(evm)
+        assertEquals(evm, onlyEvm)
+        assertEquals(null, noBtc)
+
+        // Single BTC
+        val (noEvm, onlyBtc) = utils.parseAddresses(btc)
+        assertEquals(null, noEvm)
+        assertEquals(btc, onlyBtc)
+    }
 }

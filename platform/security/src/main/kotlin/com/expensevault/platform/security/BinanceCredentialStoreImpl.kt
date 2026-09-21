@@ -30,7 +30,16 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
         private const val PREF_WEB3_ADDRESS = "binance_web3_address"
         private const val PREF_WEB3_CHAINS = "binance_web3_chains"
         private val DEFAULT_WALLETS = setOf("Spot", "Funding", "Earn", "Futures", "Margin")
-        private val DEFAULT_CHAINS = setOf("BSC")
+        private val DEFAULT_CHAINS = setOf(
+            "BITCOIN",
+            "BSC",
+            "ETHEREUM",
+            "ARBITRUM",
+            "POLYGON",
+            "BASE",
+            "OPTIMISM",
+            "AVALANCHE"
+        )
         private const val GCM_TAG_LENGTH = 128
     }
 
@@ -119,7 +128,14 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
         return when (getIntegrationType()) {
             com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET -> {
                 val addr = getWeb3Address() ?: return ""
-                if (addr.length > 10) "${addr.take(6)}...${addr.takeLast(4)}" else addr
+                val parts = addr.split(";").filter { it.isNotBlank() }
+                if (parts.size > 1) {
+                    val p1 = parts[0].let { if (it.length > 10) "${it.take(6)}...${it.takeLast(4)}" else it }
+                    val p2 = parts[1].let { if (it.length > 10) "${it.take(6)}...${it.takeLast(4)}" else it }
+                    "$p1 & $p2"
+                } else {
+                    if (addr.length > 10) "${addr.take(6)}...${addr.takeLast(4)}" else addr
+                }
             }
             com.expensevault.core.model.BinanceIntegrationType.EXCHANGE -> {
                 val key = prefs.getString(PREF_API_KEY, null) ?: return ""
