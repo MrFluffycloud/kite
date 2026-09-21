@@ -76,6 +76,7 @@ import com.expensevault.feature.transactions.TransactionListScreen
 import com.expensevault.feature.transactions.AddTransactionScreen
 import com.expensevault.feature.categories.CategoryScreen
 import com.expensevault.feature.accounts.AccountScreen
+import com.expensevault.feature.accounts.BinanceWeb3Screen
 import com.expensevault.feature.settings.SettingsScreen
 import com.expensevault.feature.insights.InsightsScreen
 import com.expensevault.feature.insights.BudgetScreen
@@ -130,7 +131,7 @@ fun KiteNavHost(
     val isFullscreenRoute = currentDestination?.hierarchy?.any {
         val r = it.route.orEmpty()
         r.contains("Onboarding") || r.contains("Vault") || r.contains("Add") || r.contains("Split") ||
-        r.contains("Debt") || r.contains("Recurring") || r.contains("PersonDetail")
+        r.contains("Debt") || r.contains("Recurring") || r.contains("PersonDetail") || r.contains("Binance")
     } == true
 
     val navTabs = remember(currentDestination) {
@@ -271,12 +272,17 @@ fun KiteNavHost(
             }
             composable<NavRoute.Transactions> { TransactionListScreen() }
             composable<NavRoute.Categories> { CategoryScreen() }
-            composable<NavRoute.Accounts> { AccountScreen() }
+            composable<NavRoute.Accounts> {
+                AccountScreen(
+                    onNavigateToBinance = { navController.navigate(NavRoute.BinanceWeb3) }
+                )
+            }
             composable<NavRoute.Settings> {
                 SettingsScreen(
                     onVaultTrigger = {
                         navController.navigate(NavRoute.VaultLock)
-                    }
+                    },
+                    onNavigateToBinance = { navController.navigate(NavRoute.BinanceWeb3) }
                 )
             }
             composable<NavRoute.AddTransaction> { backStackEntry ->
@@ -374,6 +380,11 @@ fun KiteNavHost(
             }
             composable<NavRoute.AddEditRecurringRule> {
                 AddEditRecurringRuleScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable<NavRoute.BinanceWeb3> {
+                BinanceWeb3Screen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

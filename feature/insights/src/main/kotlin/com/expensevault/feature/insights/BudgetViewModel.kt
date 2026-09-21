@@ -29,14 +29,17 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.todayIn
 
+import com.expensevault.core.domain.repository.AccountRepository
+import com.expensevault.core.model.resolveCurrencySymbol
+
 data class BudgetUiState(
     val weeklyConfig: WeeklyAllowanceConfig = WeeklyAllowanceConfig(),
     val weeklySummary: WeeklyBudgetSummary? = null,
     val showEditAllowanceSheet: Boolean = false,
     val showAddFixedCommitmentSheet: Boolean = false,
-    val budgetStatuses: List<BudgetStatus> = emptyList(),
-    val availableCategories: List<Category> = emptyList(),
     val showAddSheet: Boolean = false,
+    val availableCategories: List<Category> = emptyList(),
+    val budgetStatuses: List<BudgetStatus> = emptyList(),
     val editingBudget: BudgetCap? = null,
     val categoryId: String = "",
     val limitAmount: String = "",
@@ -49,7 +52,8 @@ class BudgetViewModel(
     private val budgetRepository: BudgetRepository,
     private val checkBudgetUseCase: CheckBudgetUseCase,
     private val categoryRepository: CategoryRepository,
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val accountRepository: AccountRepository
 ) : ViewModel() {
 
     private val _sheetState = MutableStateFlow(
@@ -64,8 +68,9 @@ class BudgetViewModel(
         budgetRepository.getWeeklyAllowanceConfig(),
         transactionRepository.getTransactions(),
         categoryRepository.getCategories(),
+        accountRepository.getAccounts(),
         _sheetState
-    ) { config, transactions, categories, sheets ->
+    ) { config, transactions, categories, accounts, sheets ->
         val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
         val isoDay = today.dayOfWeek.isoDayNumber // 1 = Monday, 7 = Sunday
         val mondayThisWeek = today.minus(isoDay - 1, DateTimeUnit.DAY)
@@ -104,9 +109,17 @@ class BudgetViewModel(
             BigDecimal.ZERO
         }
 
+        val baseCurrency = accounts.firstOrNull()?.defaultCurrency ?: "INR"
+        val defaultSymbol = resolveCurrencySymbol(baseCurrency)
+        val activeSymbol = if (config.currencySymbol.isBlank() || (config.currencySymbol == "£" && !baseCurrency.equals("GBP", ignoreCase = true))) {
+            defaultSymbol
+        } else {
+            config.currencySymbol
+        }
+
         val summary = WeeklyBudgetSummary(
             totalAllowance = totalAllowance,
-            currencySymbol = config.currencySymbol,
+            currencySymbol = activeSymbol,
             fixedCommitments = updatedCommitments,
             totalFixedReserved = totalFixedReserved,
             discretionaryBudget = discretionaryBudget,
@@ -119,7 +132,10 @@ class BudgetViewModel(
         )
 
         BudgetUiState(
-            weeklyConfig = config.copy(fixedCommitments = updatedCommitments),
+            weeklyConfig = config.copy(
+                currencySymbol = activeSymbol,
+                fixedCommitments = updatedCommitments
+            ),
             weeklySummary = summary,
             showEditAllowanceSheet = sheets.first,
             showAddFixedCommitmentSheet = sheets.second,

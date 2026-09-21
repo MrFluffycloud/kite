@@ -53,6 +53,7 @@ private val MutedClay = Color(0xFFB5533C)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(
+    onNavigateToBinance: () -> Unit = {},
     viewModel: AccountViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -81,10 +82,10 @@ fun AccountScreen(
                     titleContentColor = InkPrimary
                 ),
                 actions = {
-                    IconButton(onClick = { viewModel.showBinanceDialog(true) }) {
+                    IconButton(onClick = onNavigateToBinance) {
                         Icon(
                             imageVector = Icons.Filled.CurrencyBitcoin,
-                            contentDescription = "Binance Wallet Linking",
+                            contentDescription = "Binance & Web3 Wallet",
                             tint = InkPrimary
                         )
                     }
@@ -152,7 +153,7 @@ fun AccountScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.showBinanceDialog(true) },
+                                .clickable { onNavigateToBinance() },
                             shape = RoundedCornerShape(18.dp),
                             colors = CardDefaults.cardColors(containerColor = NeutralCard),
                             border = BorderStroke(1.dp, Hairline),
@@ -242,7 +243,7 @@ fun AccountScreen(
                                         Surface(
                                             onClick = {
                                                 showAccountOptions = false
-                                                viewModel.showBinanceDialog(true)
+                                                onNavigateToBinance()
                                             },
                                             shape = RoundedCornerShape(12.dp),
                                             color = NeutralMuted,

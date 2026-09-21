@@ -84,6 +84,7 @@ fun isSystemReduceMotionEnabled(context: Context): Boolean {
 @Composable
 fun SettingsScreen(
     onVaultTrigger: () -> Unit,
+    onNavigateToBinance: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = koinViewModel()
 ) {
@@ -569,7 +570,7 @@ fun SettingsScreen(
                     } else {
                         "Link read-only API credentials"
                     },
-                    onClick = { viewModel.showBinanceDialog(true) }
+                    onClick = onNavigateToBinance
                 )
             }
 

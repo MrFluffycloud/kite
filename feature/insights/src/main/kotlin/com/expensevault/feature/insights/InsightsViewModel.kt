@@ -31,6 +31,9 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.todayIn
 
+import com.expensevault.core.domain.repository.AccountRepository
+import com.expensevault.core.model.resolveCurrencySymbol
+
 enum class InsightsPeriod { THIS_WEEK, THIS_MONTH, LAST_MONTH, THIS_QUARTER, THIS_YEAR }
 
 data class InsightsUiState(
@@ -44,7 +47,7 @@ data class InsightsUiState(
     val topTransactions: List<Transaction> = emptyList(),
     val weeklyAverageSpend: BigDecimal = BigDecimal.ZERO,
     val currentWeekSpend: BigDecimal = BigDecimal.ZERO,
-    val currencySymbol: String = "£",
+    val currencySymbol: String = "₹",
     val savingsTips: List<SavingsTip> = emptyList(),
     val isAdvisorLoading: Boolean = false,
     val isLoading: Boolean = false
@@ -69,7 +72,8 @@ class InsightsViewModel(
     private val transactionRepository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
     private val spendAdvisorRepository: SpendAdvisorRepository,
-    private val budgetRepository: BudgetRepository
+    private val budgetRepository: BudgetRepository,
+    private val accountRepository: AccountRepository
 ) : ViewModel() {
 
     private val _selectedPeriod = MutableStateFlow(InsightsPeriod.THIS_MONTH)
@@ -83,8 +87,9 @@ class InsightsViewModel(
         _selectedPeriod,
         transactionRepository.getTransactions(),
         categoryRepository.getCategories(),
-        budgetRepository.getWeeklyAllowanceConfig()
-    ) { period, allTransactions, categories, weeklyConfig ->
+        budgetRepository.getWeeklyAllowanceConfig(),
+        accountRepository.getAccounts()
+    ) { period, allTransactions, categories, weeklyConfig, accounts ->
         val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
 
         // 1. Filter current & previous period transactions
@@ -215,6 +220,14 @@ class InsightsViewModel(
             .sortedByDescending { it.baseAmount }
             .take(5)
 
+        val baseCurrency = accounts.firstOrNull()?.defaultCurrency ?: "INR"
+        val defaultSymbol = resolveCurrencySymbol(baseCurrency)
+        val activeSymbol = if (weeklyConfig.currencySymbol.isBlank() || (weeklyConfig.currencySymbol == "£" && !baseCurrency.equals("GBP", ignoreCase = true))) {
+            defaultSymbol
+        } else {
+            weeklyConfig.currencySymbol
+        }
+
         InsightsCalculations(
             selectedPeriod = period,
             totalSpend = totalSpend,
@@ -226,7 +239,7 @@ class InsightsViewModel(
             topTransactions = topTransactions,
             weeklyAverageSpend = weeklyAverageSpend,
             currentWeekSpend = currentWeekSpend,
-            currencySymbol = weeklyConfig.currencySymbol
+            currencySymbol = activeSymbol
         )
     }
 
@@ -259,6 +272,15 @@ class InsightsViewModel(
             val transactions = transactionRepository.getTransactions().first()
             val categories = categoryRepository.getCategories().first()
             val weeklyConfig = budgetRepository.getWeeklyAllowanceConfig().first()
+            val accounts = accountRepository.getAccounts().first()
+
+            val baseCurrency = accounts.firstOrNull()?.defaultCurrency ?: "INR"
+            val defaultSymbol = resolveCurrencySymbol(baseCurrency)
+            val activeSymbol = if (weeklyConfig.currencySymbol.isBlank() || (weeklyConfig.currencySymbol == "£" && !baseCurrency.equals("GBP", ignoreCase = true))) {
+                defaultSymbol
+            } else {
+                weeklyConfig.currencySymbol
+            }
 
             val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
             val twentyEightDaysAgo = today.minus(28, DateTimeUnit.DAY)
@@ -291,7 +313,7 @@ class InsightsViewModel(
                 weeklyAverageSpend = avg,
                 currentWeekSpend = thisWeekSpend,
                 topCategories = topCats,
-                currencySymbol = weeklyConfig.currencySymbol
+                currencySymbol = activeSymbol
             )
             _isAdvisorLoading.value = true
             _savingsTips.value = spendAdvisorRepository.getSavingsAdvice(summary)

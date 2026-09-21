@@ -15,10 +15,28 @@ data class FixedCommitment(
         get() = try { BigDecimal(amount) } catch (_: Exception) { BigDecimal.ZERO }
 }
 
+fun resolveCurrencySymbol(currencyCode: String?): String {
+    if (currencyCode.isNullOrBlank()) return "₹"
+    return when (currencyCode.uppercase().trim()) {
+        "INR", "₹" -> "₹"
+        "USD", "$" -> "$"
+        "EUR", "€" -> "€"
+        "GBP", "£" -> "£"
+        "JPY", "¥" -> "¥"
+        "CAD" -> "CA$"
+        "AUD" -> "AU$"
+        else -> try {
+            java.util.Currency.getInstance(currencyCode.uppercase()).symbol
+        } catch (_: Exception) {
+            currencyCode
+        }
+    }
+}
+
 @Serializable
 data class WeeklyAllowanceConfig(
     val totalAllowance: String = "0",
-    val currencySymbol: String = "£",
+    val currencySymbol: String = "",
     val fixedCommitments: List<FixedCommitment> = emptyList()
 ) {
     val totalAllowanceBigDecimal: BigDecimal
@@ -36,7 +54,7 @@ data class WeeklyAllowanceConfig(
 
 data class WeeklyBudgetSummary(
     val totalAllowance: BigDecimal,
-    val currencySymbol: String = "£",
+    val currencySymbol: String = "₹",
     val fixedCommitments: List<FixedCommitment>,
     val totalFixedReserved: BigDecimal,
     val discretionaryBudget: BigDecimal,

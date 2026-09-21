@@ -26,4 +26,5 @@ sealed interface NavRoute {
     @Serializable data object RecurringList : NavRoute
     @Serializable data class AddEditRecurringRule(val ruleId: Long = 0L) : NavRoute
     @Serializable data object Onboarding : NavRoute
+    @Serializable data object BinanceWeb3 : NavRoute
 }

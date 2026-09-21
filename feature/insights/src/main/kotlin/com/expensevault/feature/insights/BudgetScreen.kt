@@ -490,7 +490,9 @@ private fun EditAllowanceBottomSheet(
 ) {
     var amount by remember { mutableStateOf(if (currentAllowance == "0") "" else currentAllowance) }
     var selectedSymbol by remember { mutableStateOf(currentSymbol) }
-    val symbols = listOf("£", "$", "€", "₹")
+    val symbols = remember(currentSymbol) {
+        listOf(currentSymbol, "₹", "$", "€", "£").filter { it.isNotBlank() }.distinct()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
