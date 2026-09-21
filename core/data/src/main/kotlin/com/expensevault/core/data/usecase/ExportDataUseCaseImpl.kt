@@ -3,6 +3,9 @@ package com.expensevault.core.data.usecase
 import com.expensevault.core.database.dao.AccountDao
 import com.expensevault.core.database.dao.CategoryDao
 import com.expensevault.core.database.dao.TransactionDao
+import com.expensevault.core.database.dao.DebtRecordDao
+import com.expensevault.core.database.dao.PersonDao
+import com.expensevault.core.database.dao.RecurringRuleDao
 import com.expensevault.core.domain.usecase.ExportDataUseCase
 import com.expensevault.core.domain.usecase.ExportFormat
 import com.expensevault.core.domain.usecase.ExportResult
@@ -15,13 +18,19 @@ import kotlinx.datetime.LocalDate
 class ExportDataUseCaseImpl(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
-    private val categoryDao: CategoryDao
+    private val categoryDao: CategoryDao,
+    private val personDao: PersonDao,
+    private val debtRecordDao: DebtRecordDao,
+    private val recurringRuleDao: RecurringRuleDao
 ) : ExportDataUseCase {
 
     override suspend fun export(format: ExportFormat): ExportResult = withContext(Dispatchers.IO) {
         val transactions = transactionDao.getAll().firstOrNull() ?: emptyList()
         val accounts = accountDao.getAll().firstOrNull() ?: emptyList()
         val categories = categoryDao.getAll().firstOrNull() ?: emptyList()
+        val persons = personDao.getAll().firstOrNull() ?: emptyList()
+        val debts = debtRecordDao.getAll().firstOrNull() ?: emptyList()
+        val recurringRules = recurringRuleDao.getAll().firstOrNull() ?: emptyList()
 
         val accountMap = accounts.associate { it.id to it.name }
         val categoryMap = categories.associate { it.id to it.name }
@@ -78,6 +87,27 @@ class ExportDataUseCaseImpl(
                 categories.forEachIndexed { index, c ->
                     jsonBuilder.append("    {\"id\": ${c.id}, \"name\": \"${escapeJson(c.name)}\", \"parentId\": ${c.parentId}}")
                     if (index < categories.size - 1) jsonBuilder.append(",")
+                    jsonBuilder.append("\n")
+                }
+                jsonBuilder.append("  ],\n")
+                jsonBuilder.append("  \"persons\": [\n")
+                persons.forEachIndexed { index, p ->
+                    jsonBuilder.append("    {\"id\": ${p.id}, \"name\": \"${escapeJson(p.name)}\", \"phone\": \"${escapeJson(p.phone.orEmpty())}\"}")
+                    if (index < persons.size - 1) jsonBuilder.append(",")
+                    jsonBuilder.append("\n")
+                }
+                jsonBuilder.append("  ],\n")
+                jsonBuilder.append("  \"debts\": [\n")
+                debts.forEachIndexed { index, d ->
+                    jsonBuilder.append("    {\"id\": ${d.id}, \"personId\": ${d.personId}, \"transactionId\": ${d.transactionId}, \"amount\": \"${d.amount}\", \"currency\": \"${d.currency}\", \"direction\": \"${d.direction.name}\", \"status\": \"${d.status.name}\", \"splitMethod\": ${d.splitMethod?.let { "\"${it.name}\"" } ?: "null"}, \"note\": \"${escapeJson(d.note.orEmpty())}\", \"createdAt\": ${d.createdAt}, \"settledAt\": ${d.settledAt}}")
+                    if (index < debts.size - 1) jsonBuilder.append(",")
+                    jsonBuilder.append("\n")
+                }
+                jsonBuilder.append("  ],\n")
+                jsonBuilder.append("  \"recurringRules\": [\n")
+                recurringRules.forEachIndexed { index, r ->
+                    jsonBuilder.append("    {\"id\": ${r.id}, \"accountId\": ${r.accountId}, \"categoryId\": ${r.categoryId}, \"amount\": \"${r.amount}\", \"currency\": \"${r.currency}\", \"frequency\": \"${r.frequency.name}\", \"dayOfMonth\": ${r.dayOfMonth}, \"note\": \"${escapeJson(r.note.orEmpty())}\", \"startDate\": ${r.startDate}, \"nextOccurrenceTimestamp\": ${r.nextOccurrenceTimestamp}, \"isActive\": ${r.isActive}}")
+                    if (index < recurringRules.size - 1) jsonBuilder.append(",")
                     jsonBuilder.append("\n")
                 }
                 jsonBuilder.append("  ],\n")

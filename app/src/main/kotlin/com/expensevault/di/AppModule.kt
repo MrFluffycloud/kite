@@ -15,6 +15,9 @@ val appModule = module {
     single { AppLockManager(androidContext()) }
     single { DatabaseKeyManager(androidContext()) }
     single { VaultSessionManager(androidContext(), get()) }
+    single<com.expensevault.core.domain.repository.BinanceCredentialStore> { 
+        com.expensevault.platform.security.BinanceCredentialStoreImpl(androidContext()) 
+    }
 
     // Vault Repository
     single<VaultRepository> {
@@ -23,3 +26,4 @@ val appModule = module {
         }
     }
 }
+

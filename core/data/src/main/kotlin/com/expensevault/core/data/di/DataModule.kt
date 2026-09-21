@@ -3,6 +3,7 @@ package com.expensevault.core.data.di
 import com.expensevault.core.data.impl.*
 import com.expensevault.core.domain.repository.*
 import com.expensevault.core.domain.usecase.*
+import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
 val dataModule = module {
@@ -14,6 +15,8 @@ val dataModule = module {
     single<ExchangeRateRepository> { ExchangeRateRepositoryImpl(get(), get()) }
     single<BudgetRepository> { BudgetRepositoryImpl(get()) }
     single<RecurringRepository> { RecurringRepositoryImpl(get()) }
+    single { com.expensevault.core.data.remote.BinanceApiService(get()) }
+    single<BinanceRepository> { BinanceRepositoryImpl(get(), get(), get(), get()) }
 
     // Use cases
     single { AddTransactionUseCase(get(), get(), get()) }
@@ -23,10 +26,15 @@ val dataModule = module {
     single { SplitExpenseUseCase(get()) }
     single { ProcessRecurringRulesUseCase(get(), get(), get()) }
     single<com.expensevault.core.domain.usecase.ExportDataUseCase> { 
-        com.expensevault.core.data.usecase.ExportDataUseCaseImpl(get(), get(), get()) 
+        com.expensevault.core.data.usecase.ExportDataUseCaseImpl(get(), get(), get(), get(), get(), get()) 
     }
     single<com.expensevault.core.domain.usecase.ImportDataUseCase> { 
-        com.expensevault.core.data.usecase.ImportDataUseCaseImpl(get(), get(), get()) 
+        com.expensevault.core.data.usecase.ImportDataUseCaseImpl(get(), get(), get(), get(), get(), get()) 
     }
+    single<ClearAllDataUseCase> { 
+        com.expensevault.core.data.usecase.ClearAllDataUseCaseImpl(get(), get(), androidContext()) 
+    }
+    single<AppUpdateRepository> { AppUpdateRepositoryImpl(get()) }
 }
+
 

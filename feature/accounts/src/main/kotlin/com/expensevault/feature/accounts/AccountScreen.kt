@@ -13,7 +13,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material3.*
@@ -77,7 +79,16 @@ fun AccountScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NeutralBg,
                     titleContentColor = InkPrimary
-                )
+                ),
+                actions = {
+                    IconButton(onClick = { viewModel.showBinanceDialog(true) }) {
+                        Icon(
+                            imageVector = Icons.Filled.CurrencyBitcoin,
+                            contentDescription = "Binance Wallet Linking",
+                            tint = InkPrimary
+                        )
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -135,6 +146,66 @@ fun AccountScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 130.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Quick shortcut banner to link Binance if not yet linked
+                if (!uiState.binanceSyncState.isLinked) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.showBinanceDialog(true) },
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = NeutralCard),
+                            border = BorderStroke(1.dp, Hairline),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(Color(0xFFF0B90B).copy(alpha = 0.18f), RoundedCornerShape(11.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CurrencyBitcoin,
+                                        contentDescription = null,
+                                        tint = Color(0xFFB45309),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Link Binance Wallet",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = InkPrimary
+                                    )
+                                    Text(
+                                        text = "Track crypto spot balance via read-only API",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = InkSecondary
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = NeutralMuted
+                                ) {
+                                    Text(
+                                        text = "Link",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = InkPrimary,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(uiState.accounts, key = { it.id }) { account ->
                     var showAccountOptions by remember { mutableStateOf(false) }
                     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -144,6 +215,10 @@ fun AccountScreen(
                         account = account,
                         isDefault = isDefault,
                         formatter = formatter,
+                        isBinanceSyncing = uiState.binanceSyncState.isSyncing,
+                        onRefreshBinance = if (account.type == AccountType.BINANCE) {
+                            { viewModel.syncBinanceAccount(account.id) }
+                        } else null,
                         onClick = { showAccountOptions = true },
                         onLongClick = { showAccountOptions = true }
                     )
@@ -163,6 +238,29 @@ fun AccountScreen(
                             },
                             text = {
                                 Column(modifier = Modifier.fillMaxWidth()) {
+                                    if (account.type == AccountType.BINANCE) {
+                                        Surface(
+                                            onClick = {
+                                                showAccountOptions = false
+                                                viewModel.showBinanceDialog(true)
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = NeutralMuted,
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(14.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "Binance sync & holdings",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = InkPrimary
+                                                )
+                                            }
+                                        }
+                                    }
                                     if (!isDefault) {
                                         Surface(
                                             onClick = {
@@ -170,7 +268,7 @@ fun AccountScreen(
                                                 showAccountOptions = false
                                             },
                                             shape = RoundedCornerShape(12.dp),
-                                            color = NeutralMuted,
+                                            color = if (account.type == AccountType.BINANCE) Color.Transparent else NeutralMuted,
                                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                         ) {
                                             Row(
@@ -296,6 +394,17 @@ fun AccountScreen(
         )
     }
 
+    if (uiState.showBinanceDialog) {
+        BinanceSetupDialog(
+            syncState = uiState.binanceSyncState,
+            onDismiss = { viewModel.showBinanceDialog(false) },
+            onSaveAndSync = { key, secret -> viewModel.saveBinanceCredentials(key, secret) },
+            onTestConnection = { key, secret, cb -> viewModel.testBinanceConnection(key, secret, cb) },
+            onSyncNow = { viewModel.syncBinanceAccount() },
+            onUnlink = { viewModel.unlinkBinance() }
+        )
+    }
+
     if (uiState.deleteError != null) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissDeleteError() },
@@ -317,6 +426,8 @@ fun AccountCard(
     account: Account,
     isDefault: Boolean = false,
     formatter: NumberFormat,
+    isBinanceSyncing: Boolean = false,
+    onRefreshBinance: (() -> Unit)? = null,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -344,18 +455,22 @@ fun AccountCard(
                 AccountType.DEBIT_CARD -> Icons.Default.CreditCard
                 AccountType.CASH -> Icons.Default.Payments
                 AccountType.WALLET -> Icons.Default.Wallet
+                AccountType.BINANCE -> Icons.Default.CurrencyBitcoin
             }
+
+            val iconBg = if (account.type == AccountType.BINANCE) Color(0xFFF0B90B).copy(alpha = 0.2f) else NeutralMuted
+            val iconTint = if (account.type == AccountType.BINANCE) Color(0xFFB45309) else InkPrimary
 
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(NeutralMuted, RoundedCornerShape(11.dp)),
+                    .background(iconBg, RoundedCornerShape(11.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = accountIcon,
                     contentDescription = null,
-                    tint = InkPrimary,
+                    tint = iconTint,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -384,6 +499,20 @@ fun AccountCard(
                             )
                         }
                     }
+                    if (account.type == AccountType.BINANCE) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color(0xFFFEF3C7)
+                        ) {
+                            Text(
+                                text = "linked",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = Color(0xFF92400E),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     if (account.isArchived) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
@@ -401,7 +530,7 @@ fun AccountCard(
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = account.type.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
+                    text = if (account.type == AccountType.BINANCE) "Binance Spot" else account.type.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
                 )
@@ -419,9 +548,34 @@ fun AccountCard(
                 fontWeight = FontWeight.SemiBold,
                 color = InkPrimary
             )
+
+            if (account.type == AccountType.BINANCE && onRefreshBinance != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = onRefreshBinance,
+                    enabled = !isBinanceSyncing,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    if (isBinanceSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = InkPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh Binance balance",
+                            tint = InkSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -503,7 +657,7 @@ fun AccountBottomSheet(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    AccountType.values().forEach { type ->
+                    AccountType.values().filter { it != AccountType.BINANCE }.forEach { type ->
                         DropdownMenuItem(
                             text = { Text(type.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }) },
                             onClick = {

@@ -22,10 +22,24 @@ import org.json.JSONObject
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+import com.expensevault.core.database.dao.DebtRecordDao
+import com.expensevault.core.database.dao.PersonDao
+import com.expensevault.core.database.dao.RecurringRuleDao
+import com.expensevault.core.database.entity.DebtRecordEntity
+import com.expensevault.core.database.entity.PersonEntity
+import com.expensevault.core.database.entity.RecurringRuleEntity
+import com.expensevault.core.model.DebtDirection
+import com.expensevault.core.model.DebtStatus
+import com.expensevault.core.model.RecurringFrequency
+import com.expensevault.core.model.SplitMethod
+
 class ImportDataUseCaseImpl(
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
-    private val categoryDao: CategoryDao
+    private val categoryDao: CategoryDao,
+    private val personDao: PersonDao,
+    private val debtRecordDao: DebtRecordDao,
+    private val recurringRuleDao: RecurringRuleDao
 ) : ImportDataUseCase {
 
     override suspend fun import(content: String): Result<ImportResult> = withContext(Dispatchers.IO) {
@@ -48,6 +62,7 @@ class ImportDataUseCaseImpl(
 
         val accountIdMap = mutableMapOf<Long, Long>() // oldId -> newId
         val categoryIdMap = mutableMapOf<Long, Long>() // oldId -> newId
+        val transactionIdMap = mutableMapOf<Long, Long>() // oldId -> newId
         var accountsCreated = 0
         var categoriesCreated = 0
 
@@ -164,7 +179,7 @@ class ImportDataUseCaseImpl(
                 val dedupKey = "import_${transactionDate}_${baseAmount.toPlainString()}_${(merchant ?: note ?: "").lowercase().replace(Regex("[^a-z0-9]"), "")}"
 
                 val existing = transactionDao.getByDeduplicationKey(dedupKey)
-                if (existing == null) {
+                val txId = if (existing == null) {
                     val entity = TransactionEntity(
                         accountId = targetAccountId,
                         categoryId = targetCategoryId,
@@ -181,7 +196,7 @@ class ImportDataUseCaseImpl(
                         deduplicationKey = dedupKey,
                         source = TransactionSource.MANUAL
                     )
-                    transactionDao.insert(entity)
+                    val insertedId = transactionDao.insert(entity)
 
                     // Adjust account balance
                     val delta = when (type) {
@@ -191,6 +206,143 @@ class ImportDataUseCaseImpl(
                     }
                     accountDao.updateBalance(targetAccountId, delta)
                     importedCount++
+                    insertedId
+                } else {
+                    existing.id
+                }
+                val oldTxId = txObj.optLong("id", -1L)
+                if (oldTxId != -1L) transactionIdMap[oldTxId] = txId
+            }
+        }
+
+        // 4. Process Persons
+        val personIdMap = mutableMapOf<Long, Long>() // oldPersonId -> newPersonId
+        var personsCreated = 0
+        val existingPersons = (personDao.getAll().firstOrNull() ?: emptyList()).toMutableList()
+        if (root.has("persons")) {
+            val personsArray = root.getJSONArray("persons")
+            for (i in 0 until personsArray.length()) {
+                val pObj = personsArray.getJSONObject(i)
+                val oldPersonId = pObj.optLong("id", -1L)
+                val name = pObj.getString("name")
+                val phone = pObj.optString("phone", "").takeIf { it.isNotBlank() }
+                val avatar = pObj.optString("avatarPath", "").takeIf { it.isNotBlank() }
+
+                val match = existingPersons.find { it.name.equals(name, ignoreCase = true) }
+                if (match != null) {
+                    if (oldPersonId != -1L) personIdMap[oldPersonId] = match.id
+                } else {
+                    val entity = PersonEntity(
+                        name = name,
+                        phone = phone,
+                        avatarPath = avatar,
+                        createdAt = now
+                    )
+                    val newId = personDao.insert(entity)
+                    existingPersons.add(entity.copy(id = newId))
+                    if (oldPersonId != -1L) personIdMap[oldPersonId] = newId
+                    personsCreated++
+                }
+            }
+        }
+
+        // 5. Process Debts
+        var debtsCreated = 0
+        if (root.has("debts")) {
+            val debtsArray = root.getJSONArray("debts")
+            val existingDebts = (debtRecordDao.getAll().firstOrNull() ?: emptyList()).toMutableList()
+            for (i in 0 until debtsArray.length()) {
+                val dObj = debtsArray.getJSONObject(i)
+                val oldPersonId = dObj.getLong("personId")
+                val targetPersonId = personIdMap[oldPersonId] ?: continue
+
+                val oldTxId = dObj.optLong("transactionId", -1L).takeIf { it != -1L }
+                val targetTxId = oldTxId?.let { transactionIdMap[it] }
+
+                val amount = BigDecimal(dObj.getString("amount"))
+                val currency = dObj.optString("currency", "INR")
+                val directionStr = dObj.optString("direction", "THEY_OWE_ME")
+                val direction = try { DebtDirection.valueOf(directionStr) } catch (_: Exception) { DebtDirection.THEY_OWE_ME }
+                val statusStr = dObj.optString("status", "OPEN")
+                val status = try { DebtStatus.valueOf(statusStr) } catch (_: Exception) { DebtStatus.OPEN }
+                val splitMethodStr = dObj.optString("splitMethod", "")
+                val splitMethod = try { SplitMethod.valueOf(splitMethodStr) } catch (_: Exception) { null }
+                val note = dObj.optString("note", "").takeIf { it.isNotBlank() }
+                val createdAt = dObj.optLong("createdAt", now)
+                val settledAt = if (dObj.has("settledAt") && !dObj.isNull("settledAt")) dObj.getLong("settledAt") else null
+
+                // Check for duplicate debt
+                val isDuplicate = existingDebts.any { 
+                    it.personId == targetPersonId && 
+                    it.amount.compareTo(amount) == 0 && 
+                    it.direction == direction && 
+                    it.note == note 
+                }
+
+                if (!isDuplicate) {
+                    val debtEntity = DebtRecordEntity(
+                        personId = targetPersonId,
+                        transactionId = targetTxId,
+                        amount = amount,
+                        currency = currency,
+                        direction = direction,
+                        status = status,
+                        splitMethod = splitMethod,
+                        note = note,
+                        createdAt = createdAt,
+                        settledAt = settledAt
+                    )
+                    debtRecordDao.insert(debtEntity)
+                    debtsCreated++
+                }
+            }
+        }
+
+        // 6. Process Recurring Rules
+        var recurringRulesCreated = 0
+        if (root.has("recurringRules")) {
+            val rulesArray = root.getJSONArray("recurringRules")
+            val existingRules = (recurringRuleDao.getAll().firstOrNull() ?: emptyList()).toMutableList()
+            for (i in 0 until rulesArray.length()) {
+                val rObj = rulesArray.getJSONObject(i)
+                val oldAccId = rObj.optLong("accountId", -1L)
+                val targetAccountId = accountIdMap[oldAccId] ?: fallbackAccount.id
+                val oldCatId = if (rObj.has("categoryId") && !rObj.isNull("categoryId")) rObj.getLong("categoryId") else null
+                val targetCategoryId = oldCatId?.let { categoryIdMap[it] }
+
+                val amount = BigDecimal(rObj.getString("amount"))
+                val currency = rObj.optString("currency", "INR")
+                val note = rObj.optString("note", "").takeIf { it.isNotBlank() }
+                val freqStr = rObj.optString("frequency", "MONTHLY")
+                val frequency = try { RecurringFrequency.valueOf(freqStr) } catch (_: Exception) { RecurringFrequency.MONTHLY }
+                val dayOfMonth = if (rObj.has("dayOfMonth") && !rObj.isNull("dayOfMonth")) rObj.getInt("dayOfMonth") else null
+                val startDate = rObj.optLong("startDate", now)
+                val nextTimestamp = rObj.optLong("nextOccurrenceTimestamp", now)
+                val isActive = rObj.optBoolean("isActive", true)
+
+                val isDuplicate = existingRules.any {
+                    it.accountId == targetAccountId &&
+                    it.amount.compareTo(amount) == 0 &&
+                    it.frequency == frequency &&
+                    it.note == note
+                }
+
+                if (!isDuplicate) {
+                    val ruleEntity = RecurringRuleEntity(
+                        accountId = targetAccountId,
+                        categoryId = targetCategoryId,
+                        amount = amount,
+                        currency = currency,
+                        note = note,
+                        frequency = frequency,
+                        dayOfMonth = dayOfMonth,
+                        startDate = startDate,
+                        nextOccurrenceTimestamp = nextTimestamp,
+                        isActive = isActive,
+                        createdAt = now
+                    )
+                    recurringRuleDao.insert(ruleEntity)
+                    recurringRulesCreated++
                 }
             }
         }
@@ -199,7 +351,10 @@ class ImportDataUseCaseImpl(
             ImportResult(
                 importedCount = importedCount,
                 accountsCreated = accountsCreated,
-                categoriesCreated = categoriesCreated
+                categoriesCreated = categoriesCreated,
+                personsCreated = personsCreated,
+                debtsCreated = debtsCreated,
+                recurringRulesCreated = recurringRulesCreated
             )
         )
     }

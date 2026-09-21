@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.expensevault.core.model.Account
 import com.expensevault.core.model.AccountType
+import com.expensevault.core.model.BinanceSyncState
 import com.expensevault.core.domain.repository.AccountRepository
+import com.expensevault.core.domain.repository.BinanceRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +14,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import java.math.BigDecimal
-
 import android.content.Context
 
 data class AccountUiState(
@@ -20,6 +21,8 @@ data class AccountUiState(
     val totalBalance: BigDecimal = BigDecimal.ZERO,
     val defaultAccountId: Long = -1L,
     val showAddDialog: Boolean = false,
+    val showBinanceDialog: Boolean = false,
+    val binanceSyncState: BinanceSyncState = BinanceSyncState(),
     val editingAccount: Account? = null,
     val deleteError: String? = null,
     val formName: String = "",
@@ -31,6 +34,7 @@ data class AccountUiState(
 
 class AccountViewModel(
     private val accountRepository: AccountRepository,
+    private val binanceRepository: BinanceRepository,
     private val context: Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountUiState())
@@ -41,6 +45,15 @@ class AccountViewModel(
         val defId = prefs.getLong("pref_default_account_id", -1L)
         _uiState.update { it.copy(defaultAccountId = defId) }
         loadAccounts()
+        observeBinanceSyncState()
+    }
+
+    private fun observeBinanceSyncState() {
+        viewModelScope.launch {
+            binanceRepository.syncState.collect { state ->
+                _uiState.update { it.copy(binanceSyncState = state) }
+            }
+        }
     }
 
     private fun loadAccounts() {
@@ -55,6 +68,46 @@ class AccountViewModel(
                 val total = accounts.filter { !it.isArchived }.sumOf { it.currentBalance }
                 _uiState.update { it.copy(accounts = accounts, totalBalance = total, defaultAccountId = defId) }
             }
+        }
+    }
+
+    fun syncBinanceAccount(accountId: Long? = null) {
+        viewModelScope.launch {
+            val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
+            val baseCurrency = prefs.getString("pref_base_currency", "INR") ?: "INR"
+            binanceRepository.syncAccount(baseCurrency)
+        }
+    }
+
+    fun showBinanceDialog(show: Boolean = true) {
+        _uiState.update { it.copy(showBinanceDialog = show) }
+    }
+
+    fun saveBinanceCredentials(apiKey: String, apiSecret: String) {
+        viewModelScope.launch {
+            val saveResult = binanceRepository.saveCredentials(apiKey, apiSecret)
+            if (saveResult.isSuccess) {
+                val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
+                val baseCurrency = prefs.getString("pref_base_currency", "INR") ?: "INR"
+                binanceRepository.syncAccount(baseCurrency)
+            }
+        }
+    }
+
+    fun testBinanceConnection(apiKey: String, apiSecret: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val result = binanceRepository.testConnection(apiKey, apiSecret)
+            if (result.isSuccess) {
+                onResult(true, null)
+            } else {
+                onResult(false, result.exceptionOrNull()?.message)
+            }
+        }
+    }
+
+    fun unlinkBinance() {
+        viewModelScope.launch {
+            binanceRepository.unlinkAccount()
         }
     }
 
@@ -142,7 +195,6 @@ class AccountViewModel(
     fun deleteAccount(id: Long) {
         viewModelScope.launch {
             try {
-                // Here we should check for transactions, assuming repository handles it and throws Exception
                 accountRepository.deleteAccount(id)
             } catch (e: Exception) {
                 _uiState.update { it.copy(deleteError = "Cannot delete account with existing transactions.") }

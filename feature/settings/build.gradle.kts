@@ -28,6 +28,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:domain"))
+    implementation(project(":feature:accounts"))
     implementation(project(":platform:notification"))
     implementation(project(":platform:security"))
     implementation(libs.biometric)

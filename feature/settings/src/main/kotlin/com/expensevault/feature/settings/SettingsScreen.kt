@@ -21,7 +21,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.CurrencyRupee
+import com.expensevault.feature.accounts.BinanceSetupDialog
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -527,6 +530,29 @@ fun SettingsScreen(
                 }
             }
 
+            // Linked Accounts Group
+            SettingsGroupHeader(text = "Linked accounts")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = NeutralCard),
+                border = BorderStroke(1.dp, Hairline),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                SettingsItemRow(
+                    icon = Icons.Default.CurrencyBitcoin,
+                    title = "Binance wallet",
+                    subtitle = if (uiState.binanceSyncState.isLinked) {
+                        "Connected • Tap to manage or sync"
+                    } else {
+                        "Link read-only API credentials"
+                    },
+                    onClick = { viewModel.showBinanceDialog(true) }
+                )
+            }
+
             // Data Group
             SettingsGroupHeader(text = "Data & backup")
             Card(
@@ -561,6 +587,25 @@ fun SettingsScreen(
                         onClick = { viewModel.showClearDataDialog() }
                     )
                 }
+            }
+
+            // App & Updates Group
+            SettingsGroupHeader(text = "App & updates")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = NeutralCard),
+                border = BorderStroke(1.dp, Hairline),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                SettingsItemRow(
+                    icon = Icons.Default.SystemUpdate,
+                    title = "Check for updates",
+                    subtitle = if (uiState.isCheckingForUpdates) "Checking GitHub releases..." else "Kite v0.2.0 • Tap to check for latest release",
+                    onClick = { viewModel.checkForUpdates("0.2.0") }
+                )
             }
 
             // Privacy Note Card
@@ -847,6 +892,17 @@ fun SettingsScreen(
         )
     }
 
+    if (uiState.showBinanceDialog) {
+        BinanceSetupDialog(
+            syncState = uiState.binanceSyncState,
+            onDismiss = { viewModel.showBinanceDialog(false) },
+            onSaveAndSync = { key, secret -> viewModel.saveBinanceCredentials(key, secret) },
+            onTestConnection = { key, secret, cb -> viewModel.testBinanceConnection(key, secret, cb) },
+            onSyncNow = { viewModel.syncBinanceNow() },
+            onUnlink = { viewModel.unlinkBinance() }
+        )
+    }
+
     // Device Security Required Dialog
     if (uiState.showNoSecurityDialog) {
         AlertDialog(
@@ -920,11 +976,21 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.hideClearDataDialog()
-                        Toast.makeText(context, "Data cleared", Toast.LENGTH_SHORT).show()
-                    }
+                        viewModel.clearAllData { success ->
+                            if (success) {
+                                Toast.makeText(context, "All data has been reset to defaults", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to clear data", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !uiState.isClearingData
                 ) {
-                    Text("Clear", color = MutedClay, fontWeight = FontWeight.SemiBold)
+                    if (uiState.isClearingData) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MutedClay)
+                    } else {
+                        Text("Clear", color = MutedClay, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             },
             dismissButton = {
@@ -934,7 +1000,87 @@ fun SettingsScreen(
             }
         )
     }
+
+    // App Update Dialog
+    if (uiState.showUpdateDialog) {
+        val update = uiState.updateInfo
+        AlertDialog(
+            onDismissRequest = { viewModel.hideUpdateDialog() },
+            containerColor = NeutralCard,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = if (update?.isUpdateAvailable == true) "New Update Available" else "Kite is Up to Date",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = InkPrimary
+                )
+            },
+            text = {
+                Column {
+                    if (update?.isUpdateAvailable == true) {
+                        Text(
+                            text = "A new version of Kite (${update.latestVersion}) is available!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = InkPrimary
+                        )
+                        val notes = update.releaseNotes
+                        if (!notes.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Release Notes:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = InkSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = notes.take(350),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = InkSecondary
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "You are currently running the latest version of Kite (${update?.currentVersion ?: "0.2.0"}).",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = InkSecondary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (update?.isUpdateAvailable == true) {
+                    val targetUrl = update.apkDownloadUrl ?: update.releasePageUrl
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
+                            context.startActivity(intent)
+                            viewModel.hideUpdateDialog()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = HeroBlack),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (update.apkDownloadUrl != null) "Download APK" else "View on GitHub", color = NeutralBg)
+                    }
+                } else {
+                    TextButton(onClick = { viewModel.hideUpdateDialog() }) {
+                        Text("OK", color = InkPrimary)
+                    }
+                }
+            },
+            dismissButton = {
+                if (update?.isUpdateAvailable == true) {
+                    TextButton(onClick = { viewModel.hideUpdateDialog() }) {
+                        Text("Later", color = InkSecondary)
+                    }
+                }
+            }
+        )
+    }
 }
+
 
 @Composable
 private fun SettingsGroupHeader(text: String) {
