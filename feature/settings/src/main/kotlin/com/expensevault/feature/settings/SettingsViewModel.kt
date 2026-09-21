@@ -120,6 +120,18 @@ class SettingsViewModel(
         }
     }
 
+    fun saveBinanceWeb3Config(address: String, chains: Set<String>) {
+        viewModelScope.launch {
+            binanceRepository.saveWeb3Config(address, chains, _uiState.value.baseCurrency)
+        }
+    }
+
+    fun switchBinanceIntegrationType(type: com.expensevault.core.model.BinanceIntegrationType) {
+        viewModelScope.launch {
+            binanceRepository.switchIntegrationType(type)
+        }
+    }
+
     private fun observeSecuritySettings() {
         viewModelScope.launch {
             appLockManager.isAppLockEnabled.collect { enabled ->

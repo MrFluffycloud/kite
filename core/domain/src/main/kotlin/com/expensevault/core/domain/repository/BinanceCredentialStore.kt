@@ -13,4 +13,10 @@ interface BinanceCredentialStore {
     fun getMaskedApiKey(): String
     fun getEnabledWallets(): Set<String>
     fun saveEnabledWallets(wallets: Set<String>)
+    fun getIntegrationType(): com.expensevault.core.model.BinanceIntegrationType
+    fun saveIntegrationType(type: com.expensevault.core.model.BinanceIntegrationType)
+    fun getWeb3Address(): String?
+    fun saveWeb3Address(address: String)
+    fun getWeb3Chains(): Set<String>
+    fun saveWeb3Chains(chains: Set<String>)
 }

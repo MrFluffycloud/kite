@@ -16,7 +16,8 @@ val dataModule = module {
     single<BudgetRepository> { BudgetRepositoryImpl(get()) }
     single<RecurringRepository> { RecurringRepositoryImpl(get()) }
     single { com.expensevault.core.data.remote.BinanceApiService(get()) }
-    single<BinanceRepository> { BinanceRepositoryImpl(get(), get(), get(), get()) }
+    single { com.expensevault.core.data.remote.Web3RpcService(get()) }
+    single<BinanceRepository> { BinanceRepositoryImpl(get(), get(), get(), get(), get()) }
 
     // Use cases
     single { AddTransactionUseCase(get(), get(), get()) }

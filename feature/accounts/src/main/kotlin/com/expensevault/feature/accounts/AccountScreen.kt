@@ -399,6 +399,8 @@ fun AccountScreen(
             syncState = uiState.binanceSyncState,
             onDismiss = { viewModel.showBinanceDialog(false) },
             onSaveAndSync = { key, secret -> viewModel.saveBinanceCredentials(key, secret) },
+            onSaveWeb3Config = { address, chains -> viewModel.saveBinanceWeb3Config(address, chains) },
+            onSwitchIntegrationType = { type -> viewModel.switchBinanceIntegrationType(type) },
             onTestConnection = { key, secret, cb -> viewModel.testBinanceConnection(key, secret, cb) },
             onSyncNow = { viewModel.syncBinanceAccount() },
             onUnlink = { viewModel.unlinkBinance() },

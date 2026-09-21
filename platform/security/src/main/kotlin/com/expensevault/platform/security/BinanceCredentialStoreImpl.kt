@@ -26,7 +26,11 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
         private const val PREF_ENCRYPTED_SECRET = "binance_encrypted_secret"
         private const val PREF_SECRET_IV = "binance_secret_iv"
         private const val PREF_ENABLED_WALLETS = "binance_enabled_wallets"
+        private const val PREF_INTEGRATION_TYPE = "binance_integration_type"
+        private const val PREF_WEB3_ADDRESS = "binance_web3_address"
+        private const val PREF_WEB3_CHAINS = "binance_web3_chains"
         private val DEFAULT_WALLETS = setOf("Spot", "Funding", "Earn", "Futures", "Margin")
+        private val DEFAULT_CHAINS = setOf("BSC")
         private const val GCM_TAG_LENGTH = 128
     }
 
@@ -68,6 +72,7 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
             .putString(PREF_API_KEY, credentials.apiKey.trim())
             .putString(PREF_ENCRYPTED_SECRET, Base64.encodeToString(encryptedSecret, Base64.NO_WRAP))
             .putString(PREF_SECRET_IV, Base64.encodeToString(iv, Base64.NO_WRAP))
+            .putString(PREF_INTEGRATION_TYPE, com.expensevault.core.model.BinanceIntegrationType.EXCHANGE.name)
             .apply()
     }
 
@@ -98,17 +103,32 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
     }
 
     override fun isLinked(): Boolean {
-        return prefs.contains(PREF_API_KEY) &&
-                prefs.contains(PREF_ENCRYPTED_SECRET) &&
-                prefs.contains(PREF_SECRET_IV)
+        return when (getIntegrationType()) {
+            com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET -> {
+                !getWeb3Address().isNullOrBlank()
+            }
+            com.expensevault.core.model.BinanceIntegrationType.EXCHANGE -> {
+                prefs.contains(PREF_API_KEY) &&
+                        prefs.contains(PREF_ENCRYPTED_SECRET) &&
+                        prefs.contains(PREF_SECRET_IV)
+            }
+        }
     }
 
     override fun getMaskedApiKey(): String {
-        val key = prefs.getString(PREF_API_KEY, null) ?: return ""
-        return if (key.length > 8) {
-            "${key.take(4)}...${key.takeLast(4)}"
-        } else {
-            "****"
+        return when (getIntegrationType()) {
+            com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET -> {
+                val addr = getWeb3Address() ?: return ""
+                if (addr.length > 10) "${addr.take(6)}...${addr.takeLast(4)}" else addr
+            }
+            com.expensevault.core.model.BinanceIntegrationType.EXCHANGE -> {
+                val key = prefs.getString(PREF_API_KEY, null) ?: return ""
+                if (key.length > 8) {
+                    "${key.take(4)}...${key.takeLast(4)}"
+                } else {
+                    "****"
+                }
+            }
         }
     }
 
@@ -119,5 +139,46 @@ class BinanceCredentialStoreImpl(private val context: Context) : BinanceCredenti
 
     override fun saveEnabledWallets(wallets: Set<String>) {
         prefs.edit().putStringSet(PREF_ENABLED_WALLETS, wallets).apply()
+    }
+
+    override fun getIntegrationType(): com.expensevault.core.model.BinanceIntegrationType {
+        val name = prefs.getString(PREF_INTEGRATION_TYPE, null)
+        return if (name != null) {
+            try {
+                com.expensevault.core.model.BinanceIntegrationType.valueOf(name)
+            } catch (_: Exception) {
+                com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET
+            }
+        } else {
+            // Default to WEB3_WALLET if web3 address exists, or if neither exists default to WEB3_WALLET
+            if (prefs.contains(PREF_API_KEY)) {
+                com.expensevault.core.model.BinanceIntegrationType.EXCHANGE
+            } else {
+                com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET
+            }
+        }
+    }
+
+    override fun saveIntegrationType(type: com.expensevault.core.model.BinanceIntegrationType) {
+        prefs.edit().putString(PREF_INTEGRATION_TYPE, type.name).apply()
+    }
+
+    override fun getWeb3Address(): String? {
+        return prefs.getString(PREF_WEB3_ADDRESS, null)?.trim()
+    }
+
+    override fun saveWeb3Address(address: String) {
+        prefs.edit()
+            .putString(PREF_WEB3_ADDRESS, address.trim())
+            .putString(PREF_INTEGRATION_TYPE, com.expensevault.core.model.BinanceIntegrationType.WEB3_WALLET.name)
+            .apply()
+    }
+
+    override fun getWeb3Chains(): Set<String> {
+        return prefs.getStringSet(PREF_WEB3_CHAINS, null) ?: DEFAULT_CHAINS
+    }
+
+    override fun saveWeb3Chains(chains: Set<String>) {
+        prefs.edit().putStringSet(PREF_WEB3_CHAINS, chains).apply()
     }
 }

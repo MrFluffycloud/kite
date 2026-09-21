@@ -119,6 +119,20 @@ class AccountViewModel(
         }
     }
 
+    fun saveBinanceWeb3Config(address: String, chains: Set<String>) {
+        viewModelScope.launch {
+            val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
+            val baseCurrency = prefs.getString("pref_base_currency", "INR") ?: "INR"
+            binanceRepository.saveWeb3Config(address, chains, baseCurrency)
+        }
+    }
+
+    fun switchBinanceIntegrationType(type: com.expensevault.core.model.BinanceIntegrationType) {
+        viewModelScope.launch {
+            binanceRepository.switchIntegrationType(type)
+        }
+    }
+
     fun setDefaultAccount(accountId: Long) {
         val prefs = context.getSharedPreferences("expense_vault_settings", Context.MODE_PRIVATE)
         prefs.edit().putLong("pref_default_account_id", accountId).apply()
