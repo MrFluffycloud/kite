@@ -31,14 +31,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Grant Execute Permission to gradlew
         run: chmod +x gradlew
 
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore ${{ github.workspace }}/release.keystore \
+            -alias kite \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android \
+            -keypass android \
+            -dname "CN=Kite, OU=Mobile, O=Kite, L=City, ST=State, C=US"
+
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
+          KEYSTORE_PASSWORD: android
+          KEY_ALIAS: kite
+          KEY_PASSWORD: android
 
       - name: Determine Release Tag
         id: release_info
