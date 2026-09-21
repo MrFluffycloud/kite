@@ -13,8 +13,8 @@ android {
         applicationId = "com.expensevault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
     }
     
     buildFeatures {
@@ -23,12 +23,22 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystoreFile = project.findProperty("KEYSTORE_FILE")?.toString() ?: System.getenv("KEYSTORE_FILE")
+            val rootKeystore = File(project.rootDir, "kite-release.keystore")
+            val keystoreFile = project.findProperty("KEYSTORE_FILE")?.toString()
+                ?: System.getenv("KEYSTORE_FILE")
+                ?: if (rootKeystore.exists()) rootKeystore.absolutePath else null
+
             if (keystoreFile != null && file(keystoreFile).exists()) {
                 storeFile = file(keystoreFile)
-                storePassword = project.findProperty("KEYSTORE_PASSWORD")?.toString() ?: System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = project.findProperty("KEY_ALIAS")?.toString() ?: System.getenv("KEY_ALIAS")
-                keyPassword = project.findProperty("KEY_PASSWORD")?.toString() ?: System.getenv("KEY_PASSWORD")
+                storePassword = project.findProperty("KEYSTORE_PASSWORD")?.toString()
+                    ?: System.getenv("KEYSTORE_PASSWORD")
+                    ?: "kiteandroid"
+                keyAlias = project.findProperty("KEY_ALIAS")?.toString()
+                    ?: System.getenv("KEY_ALIAS")
+                    ?: "kite"
+                keyPassword = project.findProperty("KEY_PASSWORD")?.toString()
+                    ?: System.getenv("KEY_PASSWORD")
+                    ?: "kiteandroid"
             }
         }
     }
