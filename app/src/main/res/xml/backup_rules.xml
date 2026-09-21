@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="database" path="vault_data.db" />
+    <exclude domain="database" path="vault_data.db-wal" />
+    <exclude domain="database" path="vault_data.db-shm" />
+    <exclude domain="file" path="vault_media/" />
+</full-backup-content>

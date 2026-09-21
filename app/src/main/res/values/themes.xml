@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Kite" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/neutral_bg</item>
+    </style>
+    <style name="Theme.ExpenseVault" parent="Theme.Kite" />
+</resources>
